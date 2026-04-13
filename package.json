@@ -1,7 +1,7 @@
 {
-  "name": "truck-pack-app",
+  "name": "propor-plus",
   "version": "1.2.0",
-  "description": "3D Truck Load Planner",
+  "description": "ProPOR+ - Production Point of Rental Plus Truck Loading",
   "main": "src/main/index.js",
   "scripts": {
     "dev": "npm run dev:vite & sleep 4 && open -a node_modules/electron/dist/Electron.app --args $PWD",
@@ -13,8 +13,8 @@
     "preview": "vite preview"
   },
   "build": {
-    "appId": "com.truckpack.app",
-    "productName": "Truck Pack",
+    "appId": "com.propor.plus",
+    "productName": "ProPOR+",
     "directories": {
       "output": "dist-electron"
     },

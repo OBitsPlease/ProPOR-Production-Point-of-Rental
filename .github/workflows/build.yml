@@ -1,4 +1,4 @@
-name: Build Truck Pack
+name: Build ProPOR+ - Production Point of Rental Plus Truck Loading
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TruckPack-macOS
+          name: ProPOR-macOS
           path: |
             dist-electron/*.dmg
             dist-electron/*.zip
@@ -66,7 +66,7 @@ jobs:
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TruckPack-Windows
+          name: ProPOR-Windows
           path: dist-electron/*.exe
           retention-days: 30
 
@@ -82,19 +82,19 @@ jobs:
       - name: Download macOS build
         uses: actions/download-artifact@v4
         with:
-          name: TruckPack-macOS
+          name: ProPOR-macOS
           path: release/mac
 
       - name: Download Windows build
         uses: actions/download-artifact@v4
         with:
-          name: TruckPack-Windows
+          name: ProPOR-Windows
           path: release/win
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Truck Pack ${{ github.ref_name }}
+          name: ProPOR+ ${{ github.ref_name }}
           draft: false
           prerelease: false
           files: |
@@ -102,7 +102,7 @@ jobs:
             release/mac/*.zip
             release/win/*.exe
           body: |
-            ## Truck Pack ${{ github.ref_name }}
+            ## ProPOR+ ${{ github.ref_name }}
 
             ### Download
             | Platform | File |
@@ -112,3 +112,10 @@ jobs:
 
             ### First Launch Note (macOS)
             Right-click the app → Open, then click Open to bypass Gatekeeper the first time.
+
+            This release includes:
+            - Production Point of Rental Plus Truck Loading
+            - Full installer packages for both macOS and Windows
+            - 3D truck load visualization and optimization
+            - Inventory and case management
+            - Event and crew planning
