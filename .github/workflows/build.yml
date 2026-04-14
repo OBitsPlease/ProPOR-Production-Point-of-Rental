@@ -23,10 +23,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Vite renderer
-        run: npx vite build
-
       - name: Build Electron app (macOS)
+        # dist/ is pre-built and committed — skip Vite build
         run: npx electron-builder --mac --publish never
         env:
           # Skip code signing — app will work but macOS will warn first launch
@@ -57,10 +55,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Vite renderer
-        run: npx vite build
-
       - name: Build Electron app (Windows)
+        # dist/ is pre-built and committed — skip Vite build
         run: npx electron-builder --win --publish never
 
       - name: Upload Windows artifacts

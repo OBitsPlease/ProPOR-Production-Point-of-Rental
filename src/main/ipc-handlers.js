@@ -68,16 +68,21 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
     } else {
       const id = db.nextId('items')
       db.data.items.push({
-        id, name: item.name, sku: item.sku || '',
+        id, name: item.name, sku: item.sku || '', serial: item.serial || '',
         department_id: item.department_id ? parseInt(item.department_id) : null,
         length: item.length, width: item.width, height: item.height,
         weight: item.weight || 0, quantity: item.quantity || 1,
+        unique_serials: item.unique_serials || 0,
+        unit_serials:   Array.isArray(item.unit_serials) ? item.unit_serials : [],
         can_rotate_lr:        item.can_rotate_lr        !== undefined ? item.can_rotate_lr        : 1,
         can_tip_side:         item.can_tip_side         !== undefined ? item.can_tip_side         : 1,
         can_flip:             item.can_flip             !== undefined ? item.can_flip             : 1,
         can_stack_on_others:  item.can_stack_on_others  !== undefined ? item.can_stack_on_others  : 1,
         allow_stacking_on_top:item.allow_stacking_on_top!== undefined ? item.allow_stacking_on_top: 1,
         max_stack_weight:     item.max_stack_weight     || 0,
+        group_id: item.group_id || null,
+        case_id: item.case_id || null,
+        case_qty: item.case_qty || 1,
         notes: item.notes || ''
       })
       db.save()
@@ -144,6 +149,261 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
     const db = getDb()
     db.data.plans = []
     db.save()
+    return true
+  })
+
+  // ── Events ────────────────────────────────────────────────────────────────────
+  const eventsDir = () => {
+    const { app } = require('electron')
+    const p = require('path').join(app.getPath('userData'), 'event-files')
+    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true })
+    return p
+  }
+
+  ipcMain.handle('events:getAll', () => {
+    const db = getDb()
+    if (!db.data.events) db.data.events = []
+    return db.events.getAll()
+  })
+
+  ipcMain.handle('events:get', (_, id) => {
+    const db = getDb()
+    if (!db.data.events) db.data.events = []
+    return db.data.events.find(e => e.id === id) || null
+  })
+
+  ipcMain.handle('events:save', (_, event) => {
+    const db = getDb()
+    if (!db.data.events) db.data.events = []
+    const now = new Date().toISOString()
+    if (event.id) {
+      const idx = db.data.events.findIndex(e => e.id === event.id)
+      if (idx !== -1) db.data.events[idx] = { ...db.data.events[idx], ...event, updated_at: now }
+      else db.data.events.push({ ...event, updated_at: now })
+      db.save()
+      return event.id
+    } else {
+      const id = db.nextId('events')
+      db.data.events.push({
+        id,
+        name: event.name || 'New Event',
+        client: event.client || '',
+        event_date: event.event_date || '',
+        load_in: event.load_in || '',
+        load_out: event.load_out || '',
+        status: event.status || 'upcoming',
+        notes: event.notes || '',
+        // Venue
+        venue_name: event.venue_name || '',
+        venue_address: event.venue_address || '',
+        venue_city: event.venue_city || '',
+        venue_state: event.venue_state || '',
+        venue_contact_name: event.venue_contact_name || '',
+        venue_contact_phone: event.venue_contact_phone || '',
+        venue_contact_email: event.venue_contact_email || '',
+        venue_notes: event.venue_notes || '',
+        // Hotel
+        hotel_name: event.hotel_name || '',
+        hotel_address: event.hotel_address || '',
+        hotel_checkin: event.hotel_checkin || '',
+        hotel_checkout: event.hotel_checkout || '',
+        hotel_confirmation: event.hotel_confirmation || '',
+        hotel_notes: event.hotel_notes || '',
+        // Crew
+        crew: Array.isArray(event.crew) ? event.crew : [],
+        // Gear list (items for this event with per-event qty)
+        gear: Array.isArray(event.gear) ? event.gear : [],
+        // Attached files (stored in userData/event-files/<id>/)
+        files: Array.isArray(event.files) ? event.files : [],
+        created_at: now,
+        updated_at: now,
+      })
+      db.save()
+      return id
+    }
+  })
+
+  ipcMain.handle('events:delete', (_, id) => {
+    const db = getDb()
+    if (!db.data.events) db.data.events = []
+    db.data.events = db.data.events.filter(e => e.id !== id)
+    // Remove attached files dir
+    const dir = path.join(eventsDir(), String(id))
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+    db.save()
+    return true
+  })
+
+  // ── Item Groups ───────────────────────────────────────────────────────────────
+  ipcMain.handle('groups:getAll', () => {
+    const db = getDb()
+    if (!db.data.item_groups) db.data.item_groups = []
+    return [...db.data.item_groups]
+  })
+
+  ipcMain.handle('groups:save', (_, group) => {
+    const db = getDb()
+    if (!db.data.item_groups) db.data.item_groups = []
+    if (group.id) {
+      const idx = db.data.item_groups.findIndex(g => g.id === group.id)
+      if (idx !== -1) db.data.item_groups[idx] = { ...db.data.item_groups[idx], ...group }
+      else db.data.item_groups.push(group)
+    } else {
+      const id = db.nextId('item_groups')
+      db.data.item_groups.push({ id, name: group.name, color: group.color || '#4f8ef7', parent_id: group.parent_id || null })
+    }
+    db.save()
+    return group.id || db.data.item_groups[db.data.item_groups.length - 1].id
+  })
+
+  ipcMain.handle('groups:delete', (_, id) => {
+    const db = getDb()
+    if (!db.data.item_groups) db.data.item_groups = []
+    const toDelete = new Set([id])
+    db.data.item_groups.filter(g => g.parent_id === id).forEach(g => toDelete.add(g.id))
+    db.data.item_groups = db.data.item_groups.filter(g => !toDelete.has(g.id))
+    db.data.items = db.data.items.map(i => toDelete.has(i.group_id) ? { ...i, group_id: null } : i)
+    db.save()
+    return true
+  })
+
+  // ── Address Book ──────────────────────────────────────────────────────────────
+  ipcMain.handle('addressBook:getAll', (_, type) => {
+    const db = getDb()
+    if (!db.data.address_book) db.data.address_book = []
+    return db.address_book.getAll(type)
+  })
+
+  ipcMain.handle('addressBook:save', (_, entry) => {
+    const db = getDb()
+    if (!db.data.address_book) db.data.address_book = []
+    const now = new Date().toISOString()
+    if (entry.id) {
+      const idx = db.data.address_book.findIndex(e => e.id === entry.id)
+      if (idx !== -1) db.data.address_book[idx] = { ...db.data.address_book[idx], ...entry, updated_at: now }
+      else db.data.address_book.push({ ...entry, updated_at: now })
+    } else {
+      const max = db.data.address_book.reduce((m, e) => Math.max(m, e.id || 0), 0)
+      const id = max + 1
+      db.data.address_book.push({ ...entry, id, created_at: now, updated_at: now })
+    }
+    db.save()
+    return entry.id || db.data.address_book[db.data.address_book.length - 1].id
+  })
+
+  ipcMain.handle('addressBook:delete', (_, id) => {
+    const db = getDb()
+    if (!db.data.address_book) db.data.address_book = []
+    db.data.address_book = db.data.address_book.filter(e => e.id !== id)
+    db.save()
+    return true
+  })
+
+  // ── Cases ─────────────────────────────────────────────────────────────────────
+  ipcMain.handle('cases:getAll', () => {
+    const db = getDb()
+    if (!db.data.cases) db.data.cases = []
+    return db.cases.getAll()
+  })
+
+  ipcMain.handle('cases:save', (_, c) => {
+    const db = getDb()
+    if (!db.data.cases) db.data.cases = []
+    if (c.id) {
+      const idx = db.data.cases.findIndex(x => x.id === c.id)
+      if (idx !== -1) db.data.cases[idx] = { ...db.data.cases[idx], ...c }
+      else db.data.cases.push(c)
+    } else {
+      const id = db.nextId('cases')
+      db.data.cases.push({
+        id,
+        name: c.name,
+        sku:   c.sku   || '',
+        serial: c.serial || '',
+        color: c.color || '#f59e0b',
+        group_id: c.group_id || null,
+        length: c.length || 24,
+        width:  c.width  || 24,
+        height: c.height || 24,
+        weight: c.weight || 0,
+        items: Array.isArray(c.items) ? c.items : [],
+        can_rotate_lr:        c.can_rotate_lr        !== undefined ? c.can_rotate_lr        : 1,
+        can_tip_side:         c.can_tip_side         !== undefined ? c.can_tip_side         : 1,
+        can_flip:             c.can_flip             !== undefined ? c.can_flip             : 1,
+        can_stack_on_others:  c.can_stack_on_others  !== undefined ? c.can_stack_on_others  : 1,
+        allow_stacking_on_top:c.allow_stacking_on_top!== undefined ? c.allow_stacking_on_top: 1,
+        max_stack_weight:     c.max_stack_weight     || 0,
+        max_stack_qty:        c.max_stack_qty        || 0,
+        notes: c.notes || '',
+        created_at: new Date().toISOString(),
+      })
+    }
+    db.save()
+    return c.id || db.data.cases[db.data.cases.length - 1].id
+  })
+
+  ipcMain.handle('cases:delete', (_, id) => {
+    const db = getDb()
+    if (!db.data.cases) db.data.cases = []
+    db.data.cases = db.data.cases.filter(c => c.id !== id)
+    db.save()
+    return true
+  })
+
+  // File attachments: copy file into userData/event-files/<eventId>/<filename>
+  ipcMain.handle('events:attachFile', async (_, eventId) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Attach File to Event',
+      properties: ['openFile', 'multiSelections'],
+    })
+    if (canceled || !filePaths.length) return null
+    const db = getDb()
+    if (!db.data.events) return null
+    const idx = db.data.events.findIndex(e => e.id === eventId)
+    if (idx === -1) return null
+
+    const dir = path.join(eventsDir(), String(eventId))
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    const attached = []
+    for (const src of filePaths) {
+      const basename = path.basename(src)
+      // Avoid collisions
+      let dest = path.join(dir, basename)
+      let n = 1
+      while (fs.existsSync(dest)) {
+        const ext = path.extname(basename)
+        dest = path.join(dir, path.basename(basename, ext) + `_${n++}` + ext)
+      }
+      fs.copyFileSync(src, dest)
+      const stat = fs.statSync(dest)
+      const fileEntry = { name: path.basename(dest), path: dest, size: stat.size, added_at: new Date().toISOString() }
+      if (!db.data.events[idx].files) db.data.events[idx].files = []
+      db.data.events[idx].files.push(fileEntry)
+      attached.push(fileEntry)
+    }
+    db.data.events[idx].updated_at = new Date().toISOString()
+    db.save()
+    return attached
+  })
+
+  ipcMain.handle('events:removeFile', (_, { eventId, fileName }) => {
+    const db = getDb()
+    if (!db.data.events) return false
+    const idx = db.data.events.findIndex(e => e.id === eventId)
+    if (idx === -1) return false
+    const fileIdx = (db.data.events[idx].files || []).findIndex(f => f.name === fileName)
+    if (fileIdx === -1) return false
+    const filePath = db.data.events[idx].files[fileIdx].path
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    db.data.events[idx].files.splice(fileIdx, 1)
+    db.data.events[idx].updated_at = new Date().toISOString()
+    db.save()
+    return true
+  })
+
+  ipcMain.handle('events:openFile', (_, filePath) => {
+    shell.openPath(filePath)
     return true
   })
 
@@ -215,7 +475,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
   ipcMain.handle('repack:list', () => {
     const dir = repPath()
     return fs.readdirSync(dir)
-      .filter(f => f.endsWith('.truckpack'))
+      .filter(f => f.endsWith('.propor'))
       .map(f => {
         try {
           const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))
@@ -225,7 +485,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
   })
 
   ipcMain.handle('repack:save', (_, { name, data }) => {
-    const filename = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_') + '.truckpack'
+    const filename = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_') + '.propor'
     const filePath = path.join(repPath(), filename)
     fs.writeFileSync(filePath, JSON.stringify({ ...data, type: 'repack', name, savedAt: new Date().toISOString() }, null, 2))
     return filename
@@ -242,11 +502,43 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
     return true
   })
 
+  // Case Repacks — saved item layouts for individual cases (stored in DB)
+  ipcMain.handle('case_repack:list', () => {
+    const db = getDb()
+    if (!db.data.case_repacks) db.data.case_repacks = []
+    return [...db.data.case_repacks].sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  ipcMain.handle('case_repack:save', (_, { id, name, items }) => {
+    const db = getDb()
+    if (!db.data.case_repacks) db.data.case_repacks = []
+    if (id) {
+      const idx = db.data.case_repacks.findIndex(r => r.id === id)
+      if (idx >= 0) {
+        db.data.case_repacks[idx] = { ...db.data.case_repacks[idx], name, items, savedAt: new Date().toISOString() }
+      }
+    } else {
+      const newId = db.data.case_repacks.length
+        ? Math.max(...db.data.case_repacks.map(r => r.id)) + 1 : 1
+      db.data.case_repacks.push({ id: newId, name, items, savedAt: new Date().toISOString() })
+    }
+    db.save()
+    return db.data.case_repacks
+  })
+
+  ipcMain.handle('case_repack:delete', (_, id) => {
+    const db = getDb()
+    if (!db.data.case_repacks) { db.data.case_repacks = []; return true }
+    db.data.case_repacks = db.data.case_repacks.filter(r => r.id !== id)
+    db.save()
+    return true
+  })
+
   ipcMain.handle('file:saveAs', async (_, data) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: 'Save Pack File',
-      defaultPath: (data.name || 'pack').replace(/[^a-z0-9_\s]/gi, '_') + '.truckpack',
-      filters: [{ name: 'Truck Pack File', extensions: ['truckpack'] }]
+      defaultPath: (data.name || 'pack').replace(/[^a-z0-9_\s]/gi, '_') + '.propor',
+      filters: [{ name: 'ProPOR File', extensions: ['propor'] }]
     })
     if (canceled || !filePath) return null
     fs.writeFileSync(filePath, JSON.stringify({ ...data, type: 'savefile', savedAt: new Date().toISOString() }, null, 2))
@@ -256,7 +548,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
   ipcMain.handle('file:open', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'Open Pack File',
-      filters: [{ name: 'Truck Pack File', extensions: ['truckpack'] }],
+      filters: [{ name: 'ProPOR File', extensions: ['propor'] }],
       properties: ['openFile']
     })
     if (canceled || !filePaths.length) return null
@@ -266,7 +558,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
   ipcMain.handle('file:openFolder', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'Open Pack Files Folder',
-      filters: [{ name: 'Truck Pack File', extensions: ['truckpack'] }],
+      filters: [{ name: 'ProPOR File', extensions: ['propor'] }],
       properties: ['openFile', 'multiSelections']
     })
     if (canceled || !filePaths.length) return []

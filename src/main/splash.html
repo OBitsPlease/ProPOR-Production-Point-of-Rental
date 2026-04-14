@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      background: #0a0a14;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+    #bg {
+      position: fixed;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      opacity: 0;
+      animation: fadeIn 0.5s ease forwards;
+    }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1;
+    }
+    .bar-wrap {
+      width: 420px;
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 6px;
+      overflow: hidden;
+      opacity: 0;
+      animation: fadeIn 0.4s ease 0.6s forwards;
+      box-shadow: 0 0 16px rgba(167,139,250,0.2);
+    }
+    .bar {
+      height: 100%;
+      background: linear-gradient(90deg, #6d58c4, #a78bfa, #c4b5fd);
+      border-radius: 6px;
+      width: 0%;
+      animation: load 7.2s cubic-bezier(0.4, 0, 0.2, 1) 0.6s forwards;
+      box-shadow: 0 0 18px rgba(167,139,250,0.7);
+    }
+    .credit {
+      position: fixed;
+      bottom: 36px;
+      left: 26px;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 0.05em;
+      opacity: 0;
+      animation: fadeIn 0.6s ease 0.9s forwards;
+    }
+    @keyframes fadeIn { to { opacity: 1; } }
+    @keyframes load {
+      0%   { width: 0%; }
+      60%  { width: 72%; }
+      85%  { width: 89%; }
+      100% { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div id="bg"></div>
+  <div class="overlay">
+    <div class="bar-wrap"><div class="bar"></div></div>
+  </div>
+  <div class="credit">Created by Jason Kattawar</div>
+  <script>
+    const params = new URLSearchParams(window.location.search)
+    const bg = params.get('bg')
+    if (bg) document.getElementById('bg').style.backgroundImage = 'url("' + bg + '")'
+  </script>
+</body>
+</html>

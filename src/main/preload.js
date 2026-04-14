@@ -60,6 +60,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     open: () => ipcRenderer.invoke('file:open'),
     openFolder: () => ipcRenderer.invoke('file:openFolder'),
   },
+  groups: {
+    getAll: () => ipcRenderer.invoke('groups:getAll'),
+    save: (g) => ipcRenderer.invoke('groups:save', g),
+    delete: (id) => ipcRenderer.invoke('groups:delete', id),
+  },
+  cases: {
+    getAll: () => ipcRenderer.invoke('cases:getAll'),
+    save: (c) => ipcRenderer.invoke('cases:save', c),
+    delete: (id) => ipcRenderer.invoke('cases:delete', id),
+  },
+  caseRepacks: {
+    list: () => ipcRenderer.invoke('case_repack:list'),
+    save: (payload) => ipcRenderer.invoke('case_repack:save', payload),
+    delete: (id) => ipcRenderer.invoke('case_repack:delete', id),
+  },
+  addressBook: {
+    getAll:  (type) => ipcRenderer.invoke('addressBook:getAll', type),
+    save:    (entry) => ipcRenderer.invoke('addressBook:save', entry),
+    delete:  (id)   => ipcRenderer.invoke('addressBook:delete', id),
+  },
+  events: {
+    getAll: () => ipcRenderer.invoke('events:getAll'),
+    get: (id) => ipcRenderer.invoke('events:get', id),
+    save: (event) => ipcRenderer.invoke('events:save', event),
+    delete: (id) => ipcRenderer.invoke('events:delete', id),
+    attachFile: (eventId) => ipcRenderer.invoke('events:attachFile', eventId),
+    removeFile: (eventId, fileName) => ipcRenderer.invoke('events:removeFile', { eventId, fileName }),
+    openFile: (filePath) => ipcRenderer.invoke('events:openFile', filePath),
+  },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
     download: () => ipcRenderer.invoke('updater:download'),

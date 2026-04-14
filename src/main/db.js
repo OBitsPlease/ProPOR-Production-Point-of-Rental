@@ -6,7 +6,7 @@ let data = null  // { trucks:[], items:[], departments:[], plans:[], settings:{}
 let dbPath
 
 function getDbPath() {
-  return path.join(app.getPath('userData'), 'truckpack.json')
+  return path.join(app.getPath('userData'), 'propor.json')
 }
 
 function save() {
@@ -45,6 +45,11 @@ function setupDatabase() {
       ],
       items: [],
       plans: [],
+      events: [],
+      item_groups: [],
+      cases: [],
+      case_repacks: [],
+      address_book: [],
       settings: {},
     }
     save()
@@ -67,6 +72,7 @@ function getDb() {
         return {
           can_rotate_lr: 1, can_tip_side: 1, can_flip: 1,
           can_stack_on_others: 1, allow_stacking_on_top: 1, max_stack_weight: 0,
+          quantity: 1, serial: '', unique_serials: 0, unit_serials: [], group_id: null,
           ...item,
           department_name: dept.name || null,
           department_color: dept.color || null,
@@ -78,6 +84,22 @@ function getDb() {
         const truck = data.trucks.find(t => t.id === plan.truck_id) || {}
         return { ...plan, truck_name: truck.name || null }
       })
+    }},
+    events:      { getAll: () => {
+      if (!data.events) data.events = []
+      return [...data.events].sort((a,b) => (b.updated_at||'').localeCompare(a.updated_at||''))
+    }},
+    address_book: { getAll: (type) => {
+      if (!data.address_book) data.address_book = []
+      const all = [...data.address_book].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+      return type ? all.filter(e => e.type === type) : all
+    }},
+    cases: { getAll: () => {
+      if (!data.cases) data.cases = []
+      return [...data.cases].sort((a,b) => (a.name||'').localeCompare(b.name||'')).map(c => ({
+        items: [],
+        ...c,
+      }))
     }},
   }
 }
