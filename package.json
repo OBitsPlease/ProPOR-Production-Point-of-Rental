@@ -52,7 +52,7 @@
     "publish": {
       "provider": "github",
       "owner": "OBitsPlease",
-      "repo": "truck-pack-app"
+      "repo": "ProPOW-Production-Point-of-Rental"
     }
   },
   "keywords": [
