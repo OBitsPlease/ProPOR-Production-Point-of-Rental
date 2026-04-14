@@ -1,17 +1,23 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Truck, Package, Layers, FileText,
-  Tag, ChevronRight, Settings, Archive
+  Tag, ChevronRight, Settings, Archive, Wrench,
+  Calendar, History, BookUser, Pencil
 } from 'lucide-react'
 
 const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/trucks', icon: Truck, label: 'Truck Profiles' },
-  { to: '/departments', icon: Tag, label: 'Departments' },
-  { to: '/items', icon: Package, label: 'Items' },
-  { to: '/planner', icon: Layers, label: 'Load Planner' },
-  { to: '/repacks', icon: Archive, label: 'RePacks' },
-  { to: '/reports', icon: FileText, label: 'Reports' },
+  { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/events',      icon: Calendar,        label: 'Events' },
+  { to: '/history',     icon: History,         label: 'History' },
+  { to: '/address-book',icon: BookUser,        label: 'Address Book' },
+  { to: '/trucks',      icon: Truck,           label: 'Truck Profiles' },
+  { to: '/departments', icon: Tag,             label: 'Departments' },
+  { to: '/items',       icon: Package,         label: 'Items' },
+  { to: '/bulk-edit',   icon: Pencil,          label: 'Bulk Edit' },
+  { to: '/planner',     icon: Layers,          label: 'Load Planner' },
+  { to: '/repacks',     icon: Archive,         label: 'RePacks' },
+  { to: '/repairs',     icon: Wrench,          label: 'Repairs' },
+  { to: '/reports',     icon: FileText,        label: 'Reports' },
 ]
 
 export default function Sidebar() {
@@ -25,8 +31,8 @@ export default function Sidebar() {
             <Truck size={16} className="text-white" />
           </div>
           <div>
-            <div className="text-white font-semibold text-sm leading-tight">Truck Pack</div>
-            <div className="text-gray-500 text-xs">3D Load Planner</div>
+            <div className="text-white font-semibold text-sm leading-tight">ProPOR</div>
+            <div className="text-gray-500 text-xs">Production Point of Rental</div>
           </div>
         </div>
       </div>
@@ -73,7 +79,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="px-5 py-3 border-t border-dark-600 text-xs text-gray-600">
-        v1.3.1
+        v1.3.2
       </div>
     </aside>
   )

@@ -12,6 +12,7 @@
       user-select: none;
       -webkit-app-region: drag;
     }
+
     #bg {
       position: fixed;
       inset: 0;
@@ -19,65 +20,153 @@
       background-position: center;
       background-repeat: no-repeat;
       opacity: 0;
-      animation: fadeIn 0.5s ease forwards;
+      transition: opacity 0.4s ease;
     }
+
+    /* Bottom vignette so bar reads clearly over the image */
+    #vignette {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 220px;
+      background: linear-gradient(to bottom, transparent, rgba(5,5,15,0.82));
+      z-index: 1;
+      pointer-events: none;
+    }
+
     .overlay {
       position: fixed;
-      inset: 0;
+      bottom: 44px;
+      left: 0; right: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      z-index: 1;
+      gap: 20px;
+      z-index: 2;
     }
-    .bar-wrap {
-      width: 420px;
-      height: 6px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 6px;
-      overflow: hidden;
-      opacity: 0;
-      animation: fadeIn 0.4s ease 0.6s forwards;
-      box-shadow: 0 0 16px rgba(167,139,250,0.2);
-    }
-    .bar {
-      height: 100%;
-      background: linear-gradient(90deg, #6d58c4, #a78bfa, #c4b5fd);
-      border-radius: 6px;
-      width: 0%;
-      animation: load 7.2s cubic-bezier(0.4, 0, 0.2, 1) 0.6s forwards;
-      box-shadow: 0 0 18px rgba(167,139,250,0.7);
-    }
+
     .credit {
-      position: fixed;
-      bottom: 36px;
-      left: 26px;
-      font-size: 12px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.55);
-      letter-spacing: 0.05em;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.92);
+      text-shadow:
+        0 0 28px rgba(167,139,250,0.9),
+        0 0 10px rgba(167,139,250,0.6),
+        0 2px 6px rgba(0,0,0,0.9);
       opacity: 0;
-      animation: fadeIn 0.6s ease 0.9s forwards;
+      transition: opacity 0.5s ease;
     }
-    @keyframes fadeIn { to { opacity: 1; } }
-    @keyframes load {
-      0%   { width: 0%; }
-      60%  { width: 72%; }
-      85%  { width: 89%; }
-      100% { width: 100%; }
+
+    /* Track — always visible so we can see where bar is going */
+    .bar-track {
+      width: 62vw;
+      min-width: 500px;
+      max-width: 920px;
+      height: 10px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 10px;
+      border: 1px solid rgba(167,139,250,0.20);
+      position: relative;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    /* Glow halo behind the track */
+    .bar-track::before {
+      content: '';
+      position: absolute;
+      inset: -6px -6px;
+      border-radius: 16px;
+      background: rgba(167,139,250,0.07);
+      filter: blur(8px);
+    }
+
+    /* The fill — width driven by JS */
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 10px;
+      background: linear-gradient(90deg, #6040cc, #9b6ffa, #c4b5fd, #b89efb, #7c5cf5);
+      background-size: 300% 100%;
+      position: relative;
+      /* Shimmer only — width is set by JS */
+      animation: shimmer 2s linear infinite;
+    }
+
+    /* Bright leading-edge glow dot */
+    .bar-fill::after {
+      content: '';
+      position: absolute;
+      right: -1px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #d8ccff;
+      box-shadow:
+        0 0 12px 6px rgba(196,181,253,0.9),
+        0 0 28px 12px rgba(167,139,250,0.6),
+        0 0 56px 20px rgba(130,100,240,0.3);
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 300% 0; }
+      100% { background-position: -300% 0; }
     }
   </style>
 </head>
 <body>
   <div id="bg"></div>
+  <div id="vignette"></div>
   <div class="overlay">
-    <div class="bar-wrap"><div class="bar"></div></div>
+    <div class="credit" id="credit">Created by Jason Kattawar</div>
+    <div class="bar-track" id="track">
+      <div class="bar-fill" id="bar"></div>
+    </div>
   </div>
-  <div class="credit">Created by Jason Kattawar</div>
+
   <script>
-    const params = new URLSearchParams(window.location.search)
-    const bg = params.get('bg')
-    if (bg) document.getElementById('bg').style.backgroundImage = 'url("' + bg + '")'
+    // ── Set background image from query param ──────────────────────────────
+    const bg = new URLSearchParams(window.location.search).get('bg')
+    const bgEl = document.getElementById('bg')
+    if (bg) {
+      bgEl.style.backgroundImage = 'url("' + bg + '")'
+    }
+
+    // ── Fade in image, credit, track after a tick ──────────────────────────
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bgEl.style.opacity = '1'
+        document.getElementById('credit').style.opacity = '1'
+        document.getElementById('track').style.opacity = '1'
+      })
+    })
+
+    // ── JS-driven progress bar over exactly 7000 ms ────────────────────────
+    const DURATION = 7000   // ms — matches MIN_SPLASH_MS in index.js
+    const bar = document.getElementById('bar')
+    const startTime = performance.now()
+
+    // Easing: fast start, decelerates, tiny pause near end, then snaps to 100
+    function easeProgress(t) {
+      // t = 0..1
+      if (t >= 1) return 1
+      // Custom curve: quick initial fill, gentle slow near 90%, last 5% snaps
+      return t < 0.7
+        ? 1 - Math.pow(1 - (t / 0.7), 2.2) * 0.35   // fills to ~65% by 70% time
+        : 0.65 + (t - 0.7) / 0.3 * 0.35               // linear 65%→100% in last 30%
+    }
+
+    function tick(now) {
+      const elapsed = now - startTime
+      const t = Math.min(elapsed / DURATION, 1)
+      const pct = easeProgress(t) * 100
+      bar.style.width = pct.toFixed(2) + '%'
+      if (t < 1) requestAnimationFrame(tick)
+    }
+
+    requestAnimationFrame(tick)
   </script>
 </body>
 </html>

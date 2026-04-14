@@ -299,6 +299,133 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
     return true
   })
 
+  // ── Repairs ───────────────────────────────────────────────────────────────────
+  const repairsDir = () => {
+    const { app } = require('electron')
+    const p = path.join(app.getPath('userData'), 'repair-files')
+    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true })
+    return p
+  }
+
+  ipcMain.handle('repairs:getAll', () => {
+    const db = getDb()
+    if (!db.data.repairs) db.data.repairs = []
+    return db.repairs.getAll()
+  })
+
+  ipcMain.handle('repairs:save', (_, repair) => {
+    const db = getDb()
+    if (!db.data.repairs) db.data.repairs = []
+    const now = new Date().toISOString()
+    if (repair.id) {
+      const idx = db.data.repairs.findIndex(r => r.id === repair.id)
+      if (idx !== -1) db.data.repairs[idx] = { ...db.data.repairs[idx], ...repair, updated_at: now }
+      else db.data.repairs.push({ ...repair, updated_at: now, created_at: now })
+      db.save()
+      return repair.id
+    } else {
+      const id = db.nextId('repairs')
+      db.data.repairs.push({
+        id,
+        asset_type: repair.asset_type || 'item',
+        asset_id: repair.asset_id || null,
+        asset_name: repair.asset_name || '',
+        asset_sku: repair.asset_sku || '',
+        asset_department: repair.asset_department || '',
+        start_date: repair.start_date || '',
+        end_date: repair.end_date || '',
+        notes: repair.notes || '',
+        technician: repair.technician || '',
+        cost: repair.cost != null ? repair.cost : 0,
+        files: [],
+        created_at: now,
+        updated_at: now,
+      })
+      db.save()
+      return db.data.repairs[db.data.repairs.length - 1].id
+    }
+  })
+
+  ipcMain.handle('repairs:delete', (_, id) => {
+    const db = getDb()
+    if (!db.data.repairs) db.data.repairs = []
+    // Remove attached files
+    const repair = db.data.repairs.find(r => r.id === id)
+    if (repair && repair.files) {
+      for (const f of repair.files) {
+        if (f.path && fs.existsSync(f.path)) {
+          try { fs.unlinkSync(f.path) } catch(e) {}
+        }
+      }
+    }
+    const dir = path.join(repairsDir(), String(id))
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+    db.data.repairs = db.data.repairs.filter(r => r.id !== id)
+    db.save()
+    return true
+  })
+
+  ipcMain.handle('repairs:attachFile', async (_, repairId) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Attach Repair Image or Receipt',
+      filters: [
+        { name: 'Images & Documents', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'heic'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile', 'multiSelections'],
+    })
+    if (canceled || !filePaths.length) return null
+    const db = getDb()
+    if (!db.data.repairs) return null
+    const idx = db.data.repairs.findIndex(r => r.id === repairId)
+    if (idx === -1) return null
+
+    const dir = path.join(repairsDir(), String(repairId))
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    const attached = []
+    for (const src of filePaths) {
+      const basename = path.basename(src)
+      let dest = path.join(dir, basename)
+      let n = 1
+      while (fs.existsSync(dest)) {
+        const ext = path.extname(basename)
+        dest = path.join(dir, path.basename(basename, ext) + `_${n++}` + ext)
+      }
+      fs.copyFileSync(src, dest)
+      const stat = fs.statSync(dest)
+      const fileEntry = { name: path.basename(dest), path: dest, size: stat.size, added_at: new Date().toISOString() }
+      if (!db.data.repairs[idx].files) db.data.repairs[idx].files = []
+      db.data.repairs[idx].files.push(fileEntry)
+      attached.push(fileEntry)
+    }
+    db.data.repairs[idx].updated_at = new Date().toISOString()
+    db.save()
+    return attached
+  })
+
+  ipcMain.handle('repairs:removeFile', (_, { repairId, fileName }) => {
+    const db = getDb()
+    if (!db.data.repairs) return false
+    const idx = db.data.repairs.findIndex(r => r.id === repairId)
+    if (idx === -1) return false
+    const fileIdx = (db.data.repairs[idx].files || []).findIndex(f => f.name === fileName)
+    if (fileIdx === -1) return false
+    const filePath = db.data.repairs[idx].files[fileIdx].path
+    if (filePath && fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath) } catch(e) {}
+    }
+    db.data.repairs[idx].files.splice(fileIdx, 1)
+    db.data.repairs[idx].updated_at = new Date().toISOString()
+    db.save()
+    return true
+  })
+
+  ipcMain.handle('repairs:openFile', (_, filePath) => {
+    shell.openPath(filePath)
+    return true
+  })
+
   // ── Cases ─────────────────────────────────────────────────────────────────────
   ipcMain.handle('cases:getAll', () => {
     const db = getDb()

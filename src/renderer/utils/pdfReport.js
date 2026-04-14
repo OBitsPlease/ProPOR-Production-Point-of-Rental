@@ -61,10 +61,14 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const planName = plan.name || 'Load Plan'
   const truckName = (truck && truck.name) ? truck.name : 'Truck'
+  const eventName = plan.eventName || planName
+  const eventDate = plan.eventDate
+    ? new Date(plan.eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : date
 
   // Page 1 white background + header
   doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-  hdr(doc, planName, truckName + ' - ' + date, PW)
+  hdr(doc, eventName, truckName + '  ·  ' + eventDate, PW)
 
   const sY = 28, sH = 18, sg = 3
   const sW = (PW - 28 - sg * 3) / 4
@@ -141,7 +145,7 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
     willDrawPage: function(data) {
       if (manifestFirstPage) { manifestFirstPage = false; return }
       doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-      hdr(doc, planName + ' - Manifest (cont.)', date, PW)
+      hdr(doc, eventName + ' — Manifest (cont.)', eventDate, PW)
       data.settings.startY = 28
     },
   })
@@ -174,7 +178,7 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   // Call Sheet page
   doc.addPage()
   doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-  hdr(doc, 'NEXT CASE CALL SHEET', planName + ' - ' + truckName + ' - ' + date, PW)
+  hdr(doc, 'CALL SHEET  ·  ' + eventName, truckName + '  ·  ' + eventDate, PW)
 
   doc.setFillColor(...C.blueLight); doc.setDrawColor(...C.blue)
   doc.roundedRect(14, 28, PW - 28, 14, 2, 2, 'FD')
@@ -215,7 +219,7 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
     willDrawPage: function(data) {
       if (callFirstPage) { callFirstPage = false; return }
       doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-      hdr(doc, 'CALL SHEET (cont.)', planName, PW)
+      hdr(doc, 'CALL SHEET (cont.)  ·  ' + eventName, eventDate, PW)
       data.settings.startY = 28
     },
   })
@@ -223,7 +227,7 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   const lastY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 200) + 8
   if (lastY < PH - 20) {
     doc.setTextColor(...C.gray400); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
-    doc.text('Total Cases: ' + packed.length + '  -  Truck Pack 3D Load Planner  -  ' + date, PW / 2, lastY, { align: 'center' })
+    doc.text('Total Cases: ' + packed.length + '  -  ProPOR+  -  ' + eventDate, PW / 2, lastY, { align: 'center' })
   }
 
   return doc

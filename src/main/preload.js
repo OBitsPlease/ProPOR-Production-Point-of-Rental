@@ -89,6 +89,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeFile: (eventId, fileName) => ipcRenderer.invoke('events:removeFile', { eventId, fileName }),
     openFile: (filePath) => ipcRenderer.invoke('events:openFile', filePath),
   },
+  repairs: {
+    getAll: () => ipcRenderer.invoke('repairs:getAll'),
+    save: (repair) => ipcRenderer.invoke('repairs:save', repair),
+    delete: (id) => ipcRenderer.invoke('repairs:delete', id),
+    attachFile: (repairId) => ipcRenderer.invoke('repairs:attachFile', repairId),
+    removeFile: (repairId, fileName) => ipcRenderer.invoke('repairs:removeFile', { repairId, fileName }),
+    openFile: (filePath) => ipcRenderer.invoke('repairs:openFile', filePath),
+  },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
     download: () => ipcRenderer.invoke('updater:download'),

@@ -342,10 +342,47 @@ export default function LoadPlanner() {
         {result ? (
           <TruckViewer3D truck={selectedTruck} packed={result.packed} />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-3">
+          <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-3 px-6">
             <div className="text-6xl opacity-20">🚛</div>
             <p className="text-lg font-medium">Select a truck and run the load calculator</p>
             <p className="text-sm">Results will appear here in 3D</p>
+            {/* Dimension Reference Card */}
+            <div className="mt-4 border border-dark-600 rounded-xl bg-dark-800/60 px-6 py-5 max-w-xs w-full">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest text-center mb-4">Dimension Reference</p>
+              <svg viewBox="0 0 200 140" className="w-full mb-4" xmlns="http://www.w3.org/2000/svg">
+                {/* Back face */}
+                <polygon points="60,20 140,20 140,80 60,80" fill="none" stroke="#4b5563" strokeWidth="1"/>
+                {/* Top face */}
+                <polygon points="60,20 100,5 180,5 140,20" fill="none" stroke="#4b5563" strokeWidth="1"/>
+                {/* Right face */}
+                <polygon points="140,20 180,5 180,65 140,80" fill="none" stroke="#4b5563" strokeWidth="1"/>
+                {/* Visible edges colored */}
+                {/* LENGTH — along X (bottom edge) */}
+                <line x1="60" y1="80" x2="140" y2="80" stroke="#22d3ee" strokeWidth="2"/>
+                {/* WIDTH — depth edge */}
+                <line x1="140" y1="80" x2="180" y2="65" stroke="#a78bfa" strokeWidth="2"/>
+                {/* HEIGHT — vertical */}
+                <line x1="140" y1="20" x2="140" y2="80" stroke="#86efac" strokeWidth="2"/>
+                {/* Labels */}
+                <text x="95" y="95" fill="#22d3ee" fontSize="11" fontFamily="monospace" textAnchor="middle">LENGTH</text>
+                <text x="168" y="78" fill="#a78bfa" fontSize="11" fontFamily="monospace" textAnchor="middle">WIDTH</text>
+                <text x="155" y="52" fill="#86efac" fontSize="11" fontFamily="monospace" textAnchor="middle">HEIGHT</text>
+              </svg>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-0.5 shrink-0 rounded" style={{background:'#22d3ee'}}></span>
+                  <span className="text-gray-400"><strong className="text-gray-200">Rotate L/R</strong> — swaps Width ↔ Length (yaw 90°)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-0.5 shrink-0 rounded" style={{background:'#a78bfa'}}></span>
+                  <span className="text-gray-400"><strong className="text-gray-200">Tip on side</strong> — swaps Height with Length or Width</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-0.5 shrink-0 rounded" style={{background:'#86efac'}}></span>
+                  <span className="text-gray-400"><strong className="text-gray-200">Can flip</strong> — allows upside-down placement</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

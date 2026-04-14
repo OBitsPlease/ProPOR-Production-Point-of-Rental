@@ -344,7 +344,7 @@ export default function Settings() {
               </div>
             )}
             {updateStatus === 'error' && (
-              <p className="text-xs text-red-400">Update check failed. Check your connection and try again.</p>
+              <p className="text-xs text-red-400">{updateInfo?.message || 'Update check failed. Check your connection and try again.'}</p>
             )}
           </div>
           <div className="flex gap-2 shrink-0">

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron')
 const path = require('path')
 const http = require('http')
 const { autoUpdater } = require('electron-updater')
@@ -21,11 +21,44 @@ function checkViteRunning() {
 async function createWindow() {
   const isDev = await checkViteRunning()
 
+  // ── Splash window ──────────────────────────────────────────────────────────
+  // Full-screen splash using primary display dimensions.
+  // No transparency — transparent windows break on many Windows GPU drivers.
+  let splashWindow = null
+  if (!isDev) {
+    const { width, height } = screen.getPrimaryDisplay().bounds
+    splashWindow = new BrowserWindow({
+      width,
+      height,
+      x: 0,
+      y: 0,
+      frame: false,
+      resizable: false,
+      movable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      backgroundColor: '#0a0a14',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: false,   // needed to load local file:// image from CSS/JS
+      },
+    })
+    const splashImg = path.join(__dirname, '../../assets/splash.png')
+      .replace(/\\/g, '/')  // Windows backslash → forward slash
+    splashWindow.loadFile(path.join(__dirname, 'splash.html'), {
+      query: { bg: `file://${splashImg}` },
+    })
+    splashWindow.on('closed', () => { splashWindow = null })
+  }
+
+  // ── Main window (hidden until content is ready) ────────────────────────────
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
+    show: false,               // keep hidden until ready-to-show fires
     backgroundColor: '#0a0a0f',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     frame: process.platform !== 'darwin',
@@ -45,70 +78,105 @@ async function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'))
   }
 
+  // Show main window + close splash once the first frame has rendered.
+  // Enforce a minimum of 7 s so the full progress bar animation plays.
+  const splashStart = Date.now()
+  const MIN_SPLASH_MS = 7000
+
+  mainWindow.once('ready-to-show', () => {
+    const elapsed = Date.now() - splashStart
+    const delay = Math.max(0, MIN_SPLASH_MS - elapsed)
+    setTimeout(() => {
+      mainWindow.show()
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close()
+      }
+    }, delay)
+  })
+
   mainWindow.on('closed', () => { mainWindow = null })
+
+  return isDev
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   setupDatabase()
   registerIpcHandlers(ipcMain, dialog, shell, mainWindow)
 
   // Sync handler: renderer can request the app version
   ipcMain.on('app:getVersion', (e) => { e.returnValue = app.getVersion() })
 
-  createWindow()
+  const isDev = await createWindow()
 
-  // Auto-updater setup (runs after window is created)
-  autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
-  autoUpdater.logger = null // silence to avoid noise in prod
+  // Auto-updater setup — only in production builds; skip in dev
+  if (!isDev) {
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.allowPrerelease = false
+    autoUpdater.logger = null
 
-  autoUpdater.on('update-available', (info) => {
-    if (mainWindow) mainWindow.webContents.send('updater:update-available', info)
-  })
-  autoUpdater.on('update-not-available', () => {
-    if (mainWindow) mainWindow.webContents.send('updater:not-available')
-  })
-  autoUpdater.on('download-progress', (progress) => {
-    if (mainWindow) mainWindow.webContents.send('updater:progress', progress)
-  })
-  autoUpdater.on('update-downloaded', (info) => {
-    if (mainWindow) mainWindow.webContents.send('updater:downloaded', info)
-  })
-  autoUpdater.on('error', (err) => {
-    if (mainWindow) mainWindow.webContents.send('updater:error', err.message)
-  })
+    autoUpdater.on('update-available', (info) => {
+      if (mainWindow) mainWindow.webContents.send('updater:update-available', info)
+    })
+    autoUpdater.on('update-not-available', () => {
+      if (mainWindow) mainWindow.webContents.send('updater:not-available')
+    })
+    autoUpdater.on('download-progress', (progress) => {
+      if (mainWindow) mainWindow.webContents.send('updater:progress', progress)
+    })
+    autoUpdater.on('update-downloaded', (info) => {
+      if (mainWindow) mainWindow.webContents.send('updater:downloaded', info)
+    })
+    autoUpdater.on('error', (err) => {
+      // Provide a friendlier message for common network/config failures
+      let msg = err.message || String(err)
+      if (msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('net::ERR')) {
+        msg = 'Cannot reach update server. Check your internet connection and try again.'
+      } else if (msg.includes('404') || msg.includes('releases') || msg.includes('latest.yml')) {
+        msg = 'No published releases found for this version channel. Updates will be available once a release is published.'
+      }
+      if (mainWindow) mainWindow.webContents.send('updater:error', msg)
+    })
 
-  // IPC: manual check
-  ipcMain.handle('updater:check', async () => {
-    try {
-      await autoUpdater.checkForUpdates()
-    } catch (e) {
-      if (mainWindow) mainWindow.webContents.send('updater:error', e.message)
+    ipcMain.handle('updater:check', async () => {
+      try {
+        await autoUpdater.checkForUpdates()
+      } catch (e) {
+        let msg = e.message || String(e)
+        if (msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')) {
+          msg = 'Cannot reach update server. Check your internet connection and try again.'
+        } else if (msg.includes('404') || msg.includes('latest.yml')) {
+          msg = 'No published releases found. Updates will appear here when available.'
+        }
+        if (mainWindow) mainWindow.webContents.send('updater:error', msg)
+      }
+    })
+
+    ipcMain.handle('updater:download', async () => {
+      try {
+        await autoUpdater.downloadUpdate()
+      } catch (e) {
+        if (mainWindow) mainWindow.webContents.send('updater:error', e.message)
+      }
+    })
+
+    ipcMain.handle('updater:install', () => {
+      autoUpdater.quitAndInstall()
+    })
+
+    ipcMain.handle('updater:startAutoCheck', async () => {
+      try {
+        await autoUpdater.checkForUpdates()
+      } catch {
+        // Silently ignore auto-check failures on startup
+      }
+    })
+  } else {
+    // In dev: register stub handlers so renderer doesn't get unhandled invoke errors
+    for (const ch of ['updater:check', 'updater:download', 'updater:install', 'updater:startAutoCheck']) {
+      ipcMain.handle(ch, () => {})
     }
-  })
-
-  // IPC: download update
-  ipcMain.handle('updater:download', async () => {
-    try {
-      await autoUpdater.downloadUpdate()
-    } catch (e) {
-      if (mainWindow) mainWindow.webContents.send('updater:error', e.message)
-    }
-  })
-
-  // IPC: quit and install
-  ipcMain.handle('updater:install', () => {
-    autoUpdater.quitAndInstall()
-  })
-
-  // Auto-check on startup (renderer tells us whether auto-update is enabled)
-  ipcMain.handle('updater:startAutoCheck', async () => {
-    try {
-      await autoUpdater.checkForUpdates()
-    } catch {
-      // Silently ignore auto-check failures
-    }
-  })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

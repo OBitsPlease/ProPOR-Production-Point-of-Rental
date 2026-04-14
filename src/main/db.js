@@ -13,6 +13,31 @@ function save() {
   fs.writeFileSync(dbPath, JSON.stringify(data, null, 2))
 }
 
+function backupOnLaunch() {
+  try {
+    if (!fs.existsSync(dbPath)) return
+    const backupDir = path.join(app.getPath('userData'), 'backups')
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
+    const stamp = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    const backupPath = path.join(backupDir, `propor-backup-${stamp}.json`)
+    // Only write one backup per calendar day to avoid clutter
+    if (!fs.existsSync(backupPath)) {
+      fs.copyFileSync(dbPath, backupPath)
+    }
+    // Keep only the last 30 daily backups
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('propor-backup-') && f.endsWith('.json'))
+      .sort()
+    if (files.length > 30) {
+      files.slice(0, files.length - 30).forEach(f =>
+        fs.unlinkSync(path.join(backupDir, f))
+      )
+    }
+  } catch (e) {
+    // Backup failure should never crash the app
+  }
+}
+
 function nextId(table) {
   const rows = data[table]
   return rows.length ? Math.max(...rows.map(r => r.id)) + 1 : 1
@@ -20,6 +45,9 @@ function nextId(table) {
 
 function setupDatabase() {
   dbPath = getDbPath()
+
+  // Back up today's data before any writes
+  backupOnLaunch()
 
   if (fs.existsSync(dbPath)) {
     try { data = JSON.parse(fs.readFileSync(dbPath, 'utf8')) } catch(e) { data = null }
@@ -50,6 +78,7 @@ function setupDatabase() {
       cases: [],
       case_repacks: [],
       address_book: [],
+      repairs: [],
       settings: {},
     }
     save()
@@ -100,6 +129,10 @@ function getDb() {
         items: [],
         ...c,
       }))
+    }},
+    repairs: { getAll: () => {
+      if (!data.repairs) data.repairs = []
+      return [...data.repairs].sort((a,b) => (b.start_date||b.created_at||'').localeCompare(a.start_date||a.created_at||''))
     }},
   }
 }
