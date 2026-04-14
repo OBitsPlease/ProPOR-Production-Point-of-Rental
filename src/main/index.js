@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const http = require('http')
 const { autoUpdater } = require('electron-updater')
 const { setupDatabase } = require('./db')
@@ -44,11 +45,12 @@ async function createWindow() {
         webSecurity: false,   // needed to load local file:// image from CSS/JS
       },
     })
-    const splashImg = app.isPackaged
-      ? path.join(process.resourcesPath, 'splash.png').replace(/\\/g, '/')
-      : path.join(__dirname, '../../assets/splash.png').replace(/\\/g, '/')
+    const splashImgPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'splash.png')
+      : path.join(__dirname, '../../assets/splash.png')
+    const splashImgUrl = pathToFileURL(splashImgPath).href
     splashWindow.loadFile(path.join(__dirname, 'splash.html'), {
-      query: { bg: `file://${splashImg}` },
+      query: { bg: splashImgUrl },
     })
     splashWindow.on('closed', () => { splashWindow = null })
   }
