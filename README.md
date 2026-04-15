@@ -1,6 +1,6 @@
 # ProPOR
 
-**Production Point of Rental** — Professional rental truck packing and load planning desktop application for macOS and Windows.
+**Production Point of Rental** — Professional rental truck packing and load planning desktop application for macOS and Windows.  This app is free to test during development.
 
 *v1.2.0 — April 2026*
 
