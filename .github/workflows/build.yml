@@ -10,6 +10,8 @@ jobs:
   build-mac:
     name: Build macOS
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,26 +25,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Electron app (macOS)
-        # dist/ is pre-built and committed — skip Vite build
-        run: npx electron-builder --mac --publish never
+      - name: Build and publish macOS
+        # --publish always: builds the app, generates latest-mac.yml, and uploads
+        # everything (DMG, ZIP, latest-mac.yml) to the GitHub Release automatically.
+        run: npx electron-builder --mac --publish always
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Skip code signing — app will work but macOS will warn first launch
           CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ProPOR-macOS
-          path: |
-            dist-electron/*.dmg
-            dist-electron/*.zip
-            dist-electron/latest-mac.yml
-          retention-days: 30
 
   build-windows:
     name: Build Windows
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,67 +52,44 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Electron app (Windows)
-        # dist/ is pre-built and committed — skip Vite build
-        run: npx electron-builder --win --publish never
+      - name: Build and publish Windows
+        # --publish always: builds the app, generates latest.yml, and uploads
+        # everything (EXE, latest.yml) to the GitHub Release automatically.
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ProPOR-Windows
-          path: |
-            dist-electron/*.exe
-            dist-electron/latest.yml
-          retention-days: 30
-
-  # Optional: auto-create a GitHub Release when you push a v* tag
-  release:
-    name: Create GitHub Release
+  # After both builds complete, publish the draft release so electron-updater can see it
+  publish-release:
+    name: Publish Release
     needs: [build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
-      - name: Download macOS build
-        uses: actions/download-artifact@v4
+      - name: Publish draft release
+        uses: actions/github-script@v7
         with:
-          name: ProPOR-macOS
-          path: release/mac
-
-      - name: Download Windows build
-        uses: actions/download-artifact@v4
-        with:
-          name: ProPOR-Windows
-          path: release/win
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ProPOR+ ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          files: |
-            release/mac/*.dmg
-            release/mac/*.zip
-            release/mac/latest-mac.yml
-            release/win/*.exe
-            release/win/latest.yml
-          body: |
-            ## ProPOR+ ${{ github.ref_name }}
-
-            ### Download
-            | Platform | File |
-            |----------|------|
-            | macOS | `.dmg` — drag to Applications |
-            | Windows | `.exe` — run installer |
-
-            ### First Launch Note (macOS)
-            Right-click the app → Open, then click Open to bypass Gatekeeper the first time.
-
-            This release includes:
-            - Production Point of Rental Plus Truck Loading
-            - Full installer packages for both macOS and Windows
-            - 3D truck load visualization and optimization
+          script: |
+            const tag = context.ref.replace('refs/tags/', '')
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            })
+            const release = releases.find(r => r.tag_name === tag && r.draft)
+            if (release) {
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                draft: false,
+                name: `ProPOR+ ${tag}`,
+                body: `## ProPOR+ ${tag}\n\n### Download\n| Platform | File |\n|----------|------|\n| macOS | \`.dmg\` — drag to Applications |\n| Windows | \`.exe\` — run installer |\n\n### First Launch Note (macOS)\nRight-click the app → Open, then click Open to bypass Gatekeeper the first time.`
+              })
+              console.log(`Published release ${tag}`)
+            } else {
+              console.log('No draft release found for tag', tag)
+            }
             - Inventory and case management
             - Event and crew planning
