@@ -1,6 +1,6 @@
 # ProPOR
 
-**Production Point of Rental** — Professional rental truck packing and load planning desktop application for macOS and Windows.  This app is free to test during development.
+**Production Point of Rental** — Concert Production warehouse management software, event booking calendar, address book, use barcode scanners, import inventory from excel, 3D visualizer and autoloader for most efficient truck loading of concert production gear, export truck pack call sheet and event info for crew.  This app is free to test during development.
 
 *v1.2.0 — April 2026*
 
@@ -50,6 +50,7 @@ npm run build:win    # → dist-electron/*.exe (Windows)
 ### **Step 1: Prepare Your Inventory**
 
 #### Add Items Manually
+First build your groups then subgroups then item then road case, then fill your case.  For example.  GROUP- Audio  SUBGROUP- Panther 80  ITEM- Panther Line Array 80 degree  CASE- Panther 80 Cart of 4
 1. Go to **Items** (sidebar).
 2. Click **"+ Add Item"** (blue button, top right).
 3. Fill in:
@@ -61,7 +62,7 @@ npm run build:win    # → dist-electron/*.exe (Windows)
    - **Placement Restrictions** — rotation/flip/stack rules
 4. Click **"Save Item"**.
 
-#### Import from Excel / CSV
+#### Import from Excel / CSV (Items only, NOT Road Cases.  Cases Must be made manually)
 1. Prepare a spreadsheet with columns: `name`, `sku`, `department`, `length`, `width`, `height`, `weight`, `quantity`.
 2. In **Items**, click **"📤 Import Excel"**.
 3. Match your spreadsheet columns to app fields (auto-detected if column headers match).
@@ -94,9 +95,9 @@ npm run build:win    # → dist-electron/*.exe (Windows)
 3. Adjust **quantity per item**.
 4. *(Optional)* Click **"Save as Case Repack"** to save this layout for future use (e.g., "Standard Audio Case").
 
-#### Empty a Case (End-of-Load Reset)
+#### Empty a Case (End-of-Event Reset)
 1. Expand the case, click **"Empty Case"** button.
-2. All items move back to **loose inventory** for the next load.
+2. All items move back to **loose inventory** for the next Event load.
 
 **💡 Tip:** Use **"Apply Case Repack"** dropdown to instantly fill a case with a previously-saved layout — saves time for repetitive packs.
 
@@ -108,7 +109,7 @@ npm run build:win    # → dist-electron/*.exe (Windows)
 1. Go to **Events** (sidebar).
 2. Click **"+ New Event"** (top right).
 3. Enter:
-   - **Event Name** (e.g., "Summer Music Festival 2026")
+   - **Event Name** (e.g., "Summer Music Festival 2027")
    - *(Optional)* **Start with a saved truck repack** — auto-adds cases/items to the event's gear list
    - **Date** (event date, if creating from calendar)
 4. Click **"Create Event"**.
@@ -116,19 +117,21 @@ npm run build:win    # → dist-electron/*.exe (Windows)
 #### Add Event Details
 1. Open the event, navigate to the **Info** tab:
    - Add **client name**, **event date**, **load-in/load-out dates**
-   - Add **venue name** and **city**
-   - Add **notes**
+   - Add **venue name** and **info**
+   - Add **hotel name** and **info**
+   - Add **special notes for crew**
 
 #### Add Crew
 Go to the **Crew** tab:
 1. Click **"+ Add Crew"**.
 2. Enter name, role, phone, email.
-3. App prevents scheduling the same crew member on overlapping events (conflict detection).
+3. App prevents scheduling the same crew member and equipment on overlapping events (conflict detection).
 
 #### Add Venue Details
 Go to the **Venue** tab:
 1. Enter venue name, address, phone, contact.
 2. Add load-in/load-out times.
+3. or import from address book.
 
 ---
 
@@ -312,24 +315,6 @@ Before distributing, replace placeholder assets:
 
 ---
 
-## Support & Troubleshooting
-
-**App won't start?**
-- Clear app data: `rm -rf ~/Library/Application\ Support/ProPOR` (macOS) or `%APPDATA%\ProPOR` (Windows)
-- Reinstall: `bash setup.sh`
-
-**3D view is slow?**
-- Reduce item count by filtering by group
-- Lower monitor refresh rate in Settings
-
-**Can't import inventory?**
-- Check JSON format against [INVENTORY_INTEGRATION.md](./INVENTORY_INTEGRATION.md)
-- Ensure file is valid JSON (use a JSON validator)
-
-**Packing result is poor?**
-- Review **Placement Restrictions** on items (items may be artificially constrained)
-- Try a larger truck profile
-- Manually reorder items by dragging in the planner
 
 ---
 
