@@ -91,5 +91,3 @@ jobs:
             } else {
               console.log('No draft release found for tag', tag)
             }
-            - Inventory and case management
-            - Event and crew planning
