@@ -55,7 +55,7 @@
     "publish": {
       "provider": "github",
       "owner": "OBitsPlease",
-      "repo": "ProPOW-Production-Point-of-Rental"
+      "repo": "ProPOR-Production-Point-of-Rental"
     }
   },
   "keywords": [
