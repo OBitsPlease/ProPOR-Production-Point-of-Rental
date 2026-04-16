@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Save, Trash2, Check, Calendar, MapPin, Users, Package,
   Plus, X, Paperclip, Truck, ChevronDown, BookUser, History,
-  BedDouble, FileText, Search, AlertTriangle
+  BedDouble, FileText, Search, AlertTriangle, GripVertical
 } from 'lucide-react'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -142,15 +142,12 @@ export default function EventDetail() {
   // Past event import picker
   const [importPicker, setImportPicker] = useState(null)  // { section, mode }
 
-  // Gear library modal
-  const [gearModal, setGearModal] = useState(false)
-  const [gearSearch, setGearSearch] = useState('')
-  const [caseQtys, setCaseQtys]   = useState({})
-  const [itemQtys, setItemQtys]   = useState({})
-
-  // Gear list drag-drop
-  const draggingGearIdx = useRef(null)
-  const [gearDropOver, setGearDropOver] = useState(null)
+  // Gear two-column layout
+  const [gearItemSearch, setGearItemSearch] = useState('')
+  const [showCasePicker, setShowCasePicker] = useState(false)
+  const [casePickerSearch, setCasePickerSearch] = useState('')
+  const draggingItemLibId = useRef(null)
+  const [dropTarget, setDropTarget] = useState(null) // { type: 'case', gearIdx } | { type: 'standalone' }
 
   // Crew new member form
   const [newCrew, setNewCrew]     = useState({ name:'', role:'', phone:'', email:'' })
@@ -282,98 +279,95 @@ export default function EventDetail() {
   }
 
   // ─── Gear management ──────────────────────────────────────────────────────
-  const addGear = () => {
-    const newGear = [...(event.gear || [])]
-    let changed = false
-    for (const [caseId, qty] of Object.entries(caseQtys)) {
-      if (!qty || qty < 1) continue
-      const cs = allCases.find(c => c.id === Number(caseId))
-      if (!cs) continue
-      changed = true
-      const existing = newGear.findIndex(g => g._type === 'case' && g.case_id === Number(caseId))
-      if (existing >= 0) {
-        newGear[existing] = { ...newGear[existing], quantity: qty }
-      } else {
-        const items = (cs.items || []).map(ci => {
-          const item = allItems.find(i => i.id === (ci.item_id || ci.id))
-          return item ? { item_id: item.id, qty: ci.qty || 1, name: item.name, weight: item.weight || 0, department_name: item.department_name || '', department_color: item.department_color || '' } : null
-        }).filter(Boolean)
-        newGear.push({
-          _type: 'case', case_id: cs.id, name: cs.name, color: cs.color || '#f59e0b',
-          sku: cs.sku || '', length: cs.length, width: cs.width, height: cs.height,
-          weight: cs.weight || 0, items, quantity: qty,
-          can_rotate_lr: cs.can_rotate_lr, can_tip_side: cs.can_tip_side, can_flip: cs.can_flip,
-          can_stack_on_others: cs.can_stack_on_others, allow_stacking_on_top: cs.allow_stacking_on_top,
-          max_stack_weight: cs.max_stack_weight || 0,
-        })
-      }
-    }
-    for (const [itemId, qty] of Object.entries(itemQtys)) {
-      if (!qty || qty < 1) continue
-      const it = allItems.find(i => i.id === Number(itemId))
-      if (!it) continue
-      changed = true
-      const existing = newGear.findIndex(g => !g._type && g.item_id === Number(itemId))
-      if (existing >= 0) {
-        newGear[existing] = { ...newGear[existing], quantity: qty }
-      } else {
-        newGear.push({
-          item_id: it.id, name: it.name, sku: it.sku || '',
-          department_name: it.department_name || '', department_color: it.department_color || '',
-          weight: it.weight || 0, length: it.length, width: it.width, height: it.height,
-          quantity: qty, can_rotate_lr: it.can_rotate_lr, can_tip_side: it.can_tip_side,
-          can_flip: it.can_flip, can_stack_on_others: it.can_stack_on_others,
-          allow_stacking_on_top: it.allow_stacking_on_top, max_stack_weight: it.max_stack_weight || 0,
-        })
-      }
-    }
-    if (changed) { update({ gear: newGear }); setGearModal(false); setCaseQtys({}); setItemQtys({}) }
-  }
-
   const removeGear = (idx) => {
     const gear = [...(event.gear || [])]
     gear.splice(idx, 1)
     update({ gear })
   }
 
-  // Drag an item gear row onto a case gear row → move item into that case
-  const handleGearDrop = (e, targetIdx) => {
-    e.preventDefault()
-    setGearDropOver(null)
-    const srcIdx = draggingGearIdx.current
-    draggingGearIdx.current = null
-    if (srcIdx === null || srcIdx === targetIdx) return
+  const setGearQty = (idx, qty) => {
     const gear = [...(event.gear || [])]
-    const src = gear[srcIdx]
-    const target = gear[targetIdx]
-    if (!src || !target || src._type === 'case' || target._type !== 'case') return
-    // Move the item into the case's items list
-    const existingIdx = (target.items || []).findIndex(ci => ci.item_id === src.item_id)
-    let newItems
-    if (existingIdx >= 0) {
-      newItems = target.items.map((ci, i) =>
-        i === existingIdx ? { ...ci, qty: (ci.qty || 1) + (src.quantity || 1) } : ci
-      )
-    } else {
-      newItems = [...(target.items || []), {
-        item_id: src.item_id, name: src.name, qty: src.quantity || 1,
-        weight: src.weight || 0, department_name: src.department_name || '', department_color: src.department_color || '',
-      }]
-    }
-    gear[targetIdx] = { ...target, items: newItems }
-    gear.splice(srcIdx, 1) // remove standalone item row
+    gear[idx] = { ...gear[idx], quantity: Math.max(1, parseInt(qty) || 1) }
     update({ gear })
   }
 
-  const setGearQty = (idx, qty) => {
+  const addCaseToGear = (cs) => {
     const gear = [...(event.gear || [])]
-    const g = gear[idx]
-    let max = Infinity
-    if (g && !g._type && g.item_id) {
-      const a = availability.get(g.item_id)
-      if (a) max = a.available + (g.quantity || 1) // include what's already committed by this gear slot
+    const existing = gear.findIndex(g => g._type === 'case' && g.case_id === cs.id)
+    if (existing >= 0) { setShowCasePicker(false); setCasePickerSearch(''); return }
+    const items = (cs.items || []).map(ci => {
+      const item = allItems.find(i => i.id === (ci.item_id || ci.id))
+      return item ? { item_id: item.id, qty: ci.qty || 1, name: item.name, weight: item.weight || 0, department_name: item.department_name || '', department_color: item.department_color || '' } : null
+    }).filter(Boolean)
+    gear.push({
+      _type: 'case', case_id: cs.id, name: cs.name, color: cs.color || '#f59e0b',
+      sku: cs.sku || '', length: cs.length, width: cs.width, height: cs.height,
+      weight: cs.weight || 0, items, quantity: 1,
+      can_rotate_lr: cs.can_rotate_lr, can_tip_side: cs.can_tip_side, can_flip: cs.can_flip,
+      can_stack_on_others: cs.can_stack_on_others, allow_stacking_on_top: cs.allow_stacking_on_top,
+      max_stack_weight: cs.max_stack_weight || 0,
+    })
+    update({ gear })
+    setShowCasePicker(false); setCasePickerSearch('')
+  }
+
+  const handleDropItemOnCase = (e, gearIdx) => {
+    e.preventDefault()
+    setDropTarget(null)
+    const itemId = draggingItemLibId.current
+    draggingItemLibId.current = null
+    if (!itemId) return
+    const item = allItems.find(i => i.id === itemId)
+    if (!item) return
+    const gear = [...(event.gear || [])]
+    const target = gear[gearIdx]
+    if (!target || target._type !== 'case') return
+    const existingIdx = (target.items || []).findIndex(ci => ci.item_id === item.id)
+    const newItems = existingIdx >= 0
+      ? target.items.map((ci, i) => i === existingIdx ? { ...ci, qty: (ci.qty || 1) + 1 } : ci)
+      : [...(target.items || []), { item_id: item.id, name: item.name, qty: 1, weight: item.weight || 0, department_name: item.department_name || '', department_color: item.department_color || '' }]
+    gear[gearIdx] = { ...target, items: newItems }
+    update({ gear })
+  }
+
+  const handleDropItemStandalone = (e) => {
+    e.preventDefault()
+    setDropTarget(null)
+    const itemId = draggingItemLibId.current
+    draggingItemLibId.current = null
+    if (!itemId) return
+    const item = allItems.find(i => i.id === itemId)
+    if (!item) return
+    const gear = [...(event.gear || [])]
+    const existingIdx = gear.findIndex(g => !g._type && g.item_id === item.id)
+    if (existingIdx >= 0) {
+      gear[existingIdx] = { ...gear[existingIdx], quantity: (gear[existingIdx].quantity || 1) + 1 }
+    } else {
+      gear.push({
+        item_id: item.id, name: item.name, sku: item.sku || '',
+        department_name: item.department_name || '', department_color: item.department_color || '',
+        weight: item.weight || 0, length: item.length, width: item.width, height: item.height,
+        quantity: 1, can_rotate_lr: item.can_rotate_lr, can_tip_side: item.can_tip_side,
+        can_flip: item.can_flip, can_stack_on_others: item.can_stack_on_others,
+        allow_stacking_on_top: item.allow_stacking_on_top, max_stack_weight: item.max_stack_weight || 0,
+      })
     }
-    gear[idx] = { ...g, quantity: Math.max(1, Math.min(max, Number(qty) || 1)) }
+    update({ gear })
+  }
+
+  const setCaseItemQty = (gearIdx, itemId, qty) => {
+    const gear = [...(event.gear || [])]
+    const target = gear[gearIdx]
+    if (!target) return
+    gear[gearIdx] = { ...target, items: (target.items || []).map(ci => ci.item_id === itemId ? { ...ci, qty: Math.max(1, parseInt(qty) || 1) } : ci) }
+    update({ gear })
+  }
+
+  const removeItemFromCase = (gearIdx, itemId) => {
+    const gear = [...(event.gear || [])]
+    const target = gear[gearIdx]
+    if (!target) return
+    gear[gearIdx] = { ...target, items: (target.items || []).filter(ci => ci.item_id !== itemId) }
     update({ gear })
   }
 
@@ -397,13 +391,21 @@ export default function EventDetail() {
     navigate(`/planner/event/${eventId}`)
   }
 
-  // ─── Gear search filter ─────────────────────────────────────────────────
-  const gearSearchLC = gearSearch.toLowerCase()
-  const filteredCases = allCases.filter(c =>
-    !gearSearch || c.name.toLowerCase().includes(gearSearchLC) || (c.sku || '').toLowerCase().includes(gearSearchLC)
+  // ─── Gear search / computed ──────────────────────────────────────────────
+  const gearItemSearchLC = gearItemSearch.toLowerCase()
+  const filteredGearItems = allItems.filter(it =>
+    !gearItemSearch ||
+    it.name.toLowerCase().includes(gearItemSearchLC) ||
+    (it.sku || '').toLowerCase().includes(gearItemSearchLC) ||
+    (it.department_name || '').toLowerCase().includes(gearItemSearchLC)
   )
-  const filteredItems = allItems.filter(i =>
-    !gearSearch || i.name.toLowerCase().includes(gearSearchLC) || (i.sku || '').toLowerCase().includes(gearSearchLC) || (i.department_name || '').toLowerCase().includes(gearSearchLC)
+  const eventCaseGear = (event.gear || []).map((g, idx) => ({ ...g, _gearIdx: idx })).filter(g => g._type === 'case')
+  const standaloneGear = (event.gear || []).map((g, idx) => ({ ...g, _gearIdx: idx })).filter(g => !g._type)
+  const alreadyAddedCaseIds = new Set(eventCaseGear.map(g => g.case_id))
+  const casePickerLC = casePickerSearch.toLowerCase()
+  const casePickerResults = allCases.filter(cs =>
+    !alreadyAddedCaseIds.has(cs.id) &&
+    (!casePickerSearch || cs.name.toLowerCase().includes(casePickerLC) || (cs.sku || '').toLowerCase().includes(casePickerLC))
   )
 
   // ─── Address book filtered for picker ────────────────────────────────────
@@ -635,91 +637,188 @@ export default function EventDetail() {
 
         {/* GEAR */}
         {tab === 'gear' && (
-          <div className="max-w-3xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-base font-semibold text-white">Event Gear</h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {gearUnits} unit{gearUnits !== 1 ? 's' : ''} across {event.gear.length} gear type{event.gear.length !== 1 ? 's' : ''}
-                  {conflictGear.length > 0 && <span className="text-red-400 ml-2">⚠ {conflictGear.length} conflict{conflictGear.length !== 1 ? 's' : ''}</span>}
-                </p>
-              </div>
-              <button onClick={() => { setGearModal(true); setGearSearch(''); setCaseQtys({}); setItemQtys({}) }} className="btn-primary">
-                <Plus size={14} /> Add from Library
-              </button>
-            </div>
+          <div className="flex gap-4 h-full" style={{ minHeight: 0 }}>
 
-            {event.gear.length === 0 ? (
-              <div className="card text-center py-12 text-gray-500">
-                <Package size={36} className="mx-auto mb-3 opacity-25" />
-                <p>No gear added yet.</p>
-                <button onClick={() => { setGearModal(true); setGearSearch('') }} className="btn-secondary mt-4 mx-auto"><Plus size={13} /> Add from Library</button>
+            {/* LEFT: Items Library */}
+            <div className="w-64 shrink-0 flex flex-col bg-dark-800 border border-dark-600 rounded-xl overflow-hidden">
+              <div className="px-3 py-3 border-b border-dark-600 shrink-0">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Items Library</p>
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  <input className="input-field pl-8 py-1.5 text-sm" placeholder="Search items…"
+                    value={gearItemSearch} onChange={e => setGearItemSearch(e.target.value)} />
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {(event.gear || []).map((g, idx) => {
-                  const isCase = g._type === 'case'
-                  let conflict = false
-                  if (isCase) {
-                    conflict = (g.items || []).some(item => {
-                      const a = availability.get(item.item_id)
-                      return a && a.available < (item.qty || 1) * (g.quantity || 1)
-                    })
-                  } else {
-                    const a = availability.get(g.item_id)
-                    conflict = a && a.available < (g.quantity || 1)
-                  }
-                  const isDragOver = gearDropOver === idx && isCase && !isCase === false
+              <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+                {filteredGearItems.map(it => {
+                  const a = availability.get(it.id)
                   return (
-                    <div
-                      key={idx}
-                      className={`card p-0 overflow-hidden transition-all ${conflict ? 'border-red-500/30' : ''} ${
-                        gearDropOver === idx && isCase ? 'border-amber-400/60 bg-amber-500/10' : ''
-                      } ${!isCase ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                      draggable={!isCase}
-                      onDragStart={!isCase ? (e) => { draggingGearIdx.current = idx; e.dataTransfer.effectAllowed = 'move' } : undefined}
-                      onDragEnd={!isCase ? () => { draggingGearIdx.current = null; setGearDropOver(null) } : undefined}
-                      onDragOver={isCase ? (e) => { e.preventDefault(); setGearDropOver(idx) } : undefined}
-                      onDragLeave={isCase ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setGearDropOver(null) } : undefined}
-                      onDrop={isCase ? (e) => handleGearDrop(e, idx) : undefined}
+                    <div key={it.id} draggable
+                      onDragStart={e => { draggingItemLibId.current = it.id; e.dataTransfer.effectAllowed = 'copy' }}
+                      onDragEnd={() => { draggingItemLibId.current = null; setDropTarget(null) }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-dark-700 cursor-grab active:cursor-grabbing group transition-colors select-none"
                     >
-                      <div className="flex items-center gap-3 px-4 py-3">
-                        {isCase && <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: g.color || '#f59e0b' }} />}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-white truncate">{g.name}</span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${isCase ? 'bg-amber-500/15 text-amber-300' : 'bg-blue-500/15 text-blue-300'}`}>
-                              {isCase ? 'Case' : 'Item'}
-                            </span>
-                            {conflict && <span className="text-xs text-red-400 flex items-center gap-0.5"><AlertTriangle size={11} /> conflict</span>}
-                          </div>
-                          {isCase && (g.items || []).length > 0 && (
-                            <div className="text-xs text-gray-500 mt-0.5 truncate">
-                              {g.items.slice(0,3).map(i => i.name).join(', ')}{g.items.length > 3 ? ` +${g.items.length-3} more` : ''}
-                            </div>
-                          )}
-                          {isCase && gearDropOver === idx && (
-                            <div className="text-xs text-amber-400 mt-0.5">Drop item here to add to case</div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-gray-500">Qty:</span>
-                          <input
-                            type="number" min="1"
-                            className="input-field text-sm py-1 w-16 text-center"
-                            value={g.quantity || 1}
-                            onChange={e => setGearQty(idx, e.target.value)}
-                          />
-                        </div>
-                        <button onClick={() => removeGear(idx)} className="text-gray-600 hover:text-red-400 p-1 transition-colors">
-                          <X size={14} />
-                        </button>
+                      <GripVertical size={12} className="text-white/20 group-hover:text-white/40 shrink-0" />
+                      {it.department_color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: it.department_color }} />}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white truncate">{it.name}</div>
+                        {a && <div className={`text-xs ${a.available > 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>{a.available}/{a.total} avail</div>}
                       </div>
                     </div>
                   )
                 })}
+                {filteredGearItems.length === 0 && (
+                  <div className="text-center py-8 text-gray-500 text-sm">No items found</div>
+                )}
               </div>
-            )}
+            </div>
+
+            {/* RIGHT: Event Gear */}
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <div>
+                  <h2 className="text-base font-semibold text-white">Event Gear</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {gearUnits} unit{gearUnits !== 1 ? 's' : ''} · {(event.gear || []).length} type{(event.gear || []).length !== 1 ? 's' : ''}
+                    {conflictGear.length > 0 && <span className="text-red-400 ml-2">⚠ {conflictGear.length} conflict{conflictGear.length !== 1 ? 's' : ''}</span>}
+                  </p>
+                </div>
+                <div className="relative">
+                  <button onClick={() => { setShowCasePicker(p => !p); setCasePickerSearch('') }} className="btn-secondary text-sm">
+                    <Plus size={13} /> Add Case
+                  </button>
+                  {showCasePicker && (
+                    <div className="absolute right-0 top-full mt-1 w-72 bg-dark-700 border border-dark-500 rounded-xl shadow-2xl z-30">
+                      <div className="p-2 border-b border-dark-600">
+                        <div className="relative">
+                          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                          <input autoFocus className="input-field pl-8 py-1.5 text-sm w-full" placeholder="Search cases…"
+                            value={casePickerSearch} onChange={e => setCasePickerSearch(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto p-1">
+                        {casePickerResults.length === 0 ? (
+                          <div className="text-center py-4 text-gray-500 text-sm">
+                            {allCases.length === 0 ? 'No cases in library yet' : 'All cases already added'}
+                          </div>
+                        ) : casePickerResults.map(cs => (
+                          <button key={cs.id} onClick={() => addCaseToGear(cs)}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-dark-600 text-left transition-colors">
+                            <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: cs.color || '#f59e0b' }} />
+                            <span className="text-sm text-white truncate flex-1">{cs.name}</span>
+                            {cs.sku && <span className="text-xs text-gray-500 shrink-0">{cs.sku}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                {(event.gear || []).length === 0 && (
+                  <div className="card text-center py-10 text-gray-500">
+                    <Package size={32} className="mx-auto mb-3 opacity-25" />
+                    <p className="text-sm">No gear added yet.</p>
+                    <p className="text-xs mt-1 text-gray-600">Click "+ Add Case" to add a case, then drag items from the left panel into it.</p>
+                  </div>
+                )}
+
+                {/* Cases */}
+                {eventCaseGear.map(g => {
+                  const gearIdx = g._gearIdx
+                  const isDrop = dropTarget?.type === 'case' && dropTarget?.gearIdx === gearIdx
+                  const hasConflict = (g.items || []).some(ci => {
+                    const a = availability.get(ci.item_id)
+                    return a && a.available < (ci.qty || 1) * (g.quantity || 1)
+                  })
+                  return (
+                    <div key={gearIdx}
+                      className={`card p-0 overflow-hidden transition-all ${hasConflict ? 'border-red-500/30' : ''} ${isDrop ? 'border-amber-400/60 ring-1 ring-amber-400/20' : ''}`}
+                      onDragOver={e => { e.preventDefault(); setDropTarget({ type: 'case', gearIdx }) }}
+                      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropTarget(null) }}
+                      onDrop={e => handleDropItemOnCase(e, gearIdx)}
+                    >
+                      {/* Case header */}
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-dark-800/60 border-b border-dark-600">
+                        <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: g.color || '#f59e0b' }} />
+                        <span className="text-sm font-semibold text-white flex-1 truncate">{g.name}</span>
+                        <span className="text-xs text-gray-500">{g.length}×{g.width}×{g.height}" · {g.weight}lbs</span>
+                        {hasConflict && <AlertTriangle size={13} className="text-red-400 shrink-0" />}
+                        <span className="text-xs text-gray-500 ml-1">×</span>
+                        <input type="number" min="1"
+                          className="input-field text-sm py-1 w-14 text-center"
+                          value={g.quantity || 1}
+                          onChange={e => setGearQty(gearIdx, e.target.value)} />
+                        <span className="text-xs text-gray-500">cases</span>
+                        <button onClick={() => removeGear(gearIdx)} className="text-gray-600 hover:text-red-400 p-1 transition-colors ml-1"><X size={14} /></button>
+                      </div>
+                      {/* Items in this case */}
+                      <div className="divide-y divide-dark-700">
+                        {(g.items || []).map(ci => {
+                          const a = availability.get(ci.item_id)
+                          const conflict = a && a.available < (ci.qty || 1) * (g.quantity || 1)
+                          return (
+                            <div key={ci.item_id} className="flex items-center gap-2 px-4 py-2">
+                              {ci.department_color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: ci.department_color }} />}
+                              <span className={`text-sm flex-1 truncate ${conflict ? 'text-red-300' : 'text-white/80'}`}>{ci.name}</span>
+                              {conflict && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={10} />{a.available} avail</span>}
+                              <span className="text-xs text-gray-500">qty</span>
+                              <input type="number" min="1"
+                                className="input-field text-sm py-1 w-16 text-center"
+                                value={ci.qty || 1}
+                                onChange={e => setCaseItemQty(gearIdx, ci.item_id, e.target.value)} />
+                              <button onClick={() => removeItemFromCase(gearIdx, ci.item_id)} className="text-gray-600 hover:text-red-400 p-1 transition-colors"><X size={12} /></button>
+                            </div>
+                          )
+                        })}
+                        <div className={`px-4 py-2 text-xs transition-colors ${isDrop ? 'text-amber-400 bg-amber-500/10' : 'text-gray-600'}`}>
+                          {isDrop ? '↓ Release to add item to this case' : (g.items?.length === 0 ? 'Drag items from the left panel into this case' : '+ drag more items here')}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Standalone Items drop zone + list */}
+                <div className={`card p-0 overflow-hidden transition-all ${dropTarget?.type === 'standalone' ? 'border-blue-400/60 ring-1 ring-blue-400/20' : ''}`}
+                  onDragOver={e => { e.preventDefault(); setDropTarget({ type: 'standalone' }) }}
+                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropTarget(null) }}
+                  onDrop={e => handleDropItemStandalone(e)}
+                >
+                  <div className="px-4 py-2 border-b border-dark-700 bg-dark-800/40">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Standalone Items</span>
+                    <span className="text-xs text-gray-600 ml-2">(not in a case)</span>
+                  </div>
+                  {standaloneGear.length > 0 && (
+                    <div className="divide-y divide-dark-700">
+                      {standaloneGear.map(g => {
+                        const gearIdx = g._gearIdx
+                        const a = availability.get(g.item_id)
+                        const conflict = a && a.available < (g.quantity || 1)
+                        return (
+                          <div key={g.item_id} className="flex items-center gap-2 px-4 py-2">
+                            {g.department_color && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.department_color }} />}
+                            <span className={`text-sm flex-1 truncate ${conflict ? 'text-red-300' : 'text-white/80'}`}>{g.name}</span>
+                            {conflict && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={10} />{a.available} avail</span>}
+                            <span className="text-xs text-gray-500">qty</span>
+                            <input type="number" min="1"
+                              className="input-field text-sm py-1 w-16 text-center"
+                              value={g.quantity || 1}
+                              onChange={e => setGearQty(gearIdx, e.target.value)} />
+                            <button onClick={() => removeGear(gearIdx)} className="text-gray-600 hover:text-red-400 p-1 transition-colors"><X size={12} /></button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <div className={`px-4 py-3 text-xs transition-colors ${dropTarget?.type === 'standalone' ? 'text-blue-400 bg-blue-500/10' : 'text-gray-600'}`}>
+                    {dropTarget?.type === 'standalone' ? '↓ Release to add as standalone item' : 'Drag items here to add them without a case'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -788,106 +887,6 @@ export default function EventDetail() {
         )}
 
       </div>
-
-      {/* ── Gear Library Modal ──────────────────────────────────────────── */}
-      {gearModal && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-700 border border-dark-500 rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-dark-500 shrink-0">
-              <div>
-                <h2 className="font-semibold text-white">Add Gear from Library</h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {event.event_date || event.load_in ? 'Availability reflects other events on overlapping dates.' : 'Set event dates to see availability.'}
-                </p>
-              </div>
-              <button onClick={() => setGearModal(false)} className="text-gray-400 hover:text-white"><X size={18} /></button>
-            </div>
-            <div className="px-5 pt-3 pb-2 shrink-0">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                <input className="input-field pl-9" placeholder="Search cases, items, SKU, department…" value={gearSearch} onChange={e => setGearSearch(e.target.value)} />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-4">
-              {/* Cases */}
-              {filteredCases.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Cases</h3>
-                  <div className="space-y-1">
-                    {filteredCases.map(cs => {
-                      const qty = caseQtys[cs.id] || ''
-                      return (
-                        <div key={cs.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-dark-800 border border-dark-600">
-                          <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: cs.color || '#f59e0b' }} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-white truncate">{cs.name}</div>
-                            {cs.sku && <div className="text-xs text-gray-500">{cs.sku}</div>}
-                          </div>
-                          <input
-                            type="number" min="1" placeholder="Qty"
-                            className="input-field text-sm py-1 w-20 text-center"
-                            value={qty}
-                            onChange={e => {
-                              const v = Math.max(1, Number(e.target.value) || 1)
-                              setCaseQtys(q => ({ ...q, [cs.id]: v }))
-                            }}
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              {/* Items */}
-              {filteredItems.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Individual Items</h3>
-                  <div className="space-y-1">
-                    {filteredItems.map(it => {
-                      const qty = itemQtys[it.id] || ''
-                      const a = availability.get(it.id)
-                      return (
-                        <div key={it.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-dark-800 border border-dark-600">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-white truncate">{it.name}</div>
-                            <div className="text-xs text-gray-500">
-                              {it.department_name && <span className="mr-2">{it.department_name}</span>}
-                              {a && <span className={a.available > 0 ? 'text-green-400' : 'text-red-400'}>{a.available}/{a.total} avail.</span>}
-                            </div>
-                          </div>
-                          <input
-                            type="number" min="1" placeholder="Qty"
-                            className={`input-field text-sm py-1 w-20 text-center ${
-                              a && qty > a.available ? 'border-red-500/50 text-red-300' : ''
-                            }`}
-                            value={qty}
-                            max={a ? a.available : undefined}
-                            onChange={e => {
-                              const max = a ? a.available : (it.quantity || 1)
-                              const v = Math.min(max, Math.max(1, Number(e.target.value) || 1))
-                              setItemQtys(q => ({ ...q, [it.id]: v }))
-                            }}
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              {filteredCases.length === 0 && filteredItems.length === 0 && (
-                <div className="text-center py-10 text-gray-500">
-                  <Package size={32} className="mx-auto mb-2 opacity-25" />
-                  <p>No matching gear found.</p>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-dark-500 shrink-0">
-              <button onClick={() => setGearModal(false)} className="btn-secondary">Cancel</button>
-              <button onClick={addGear} className="btn-primary"><Plus size={14} /> Add Selected</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Address Book Picker Modal ───────────────────────────────────── */}
       {abPicker && (
