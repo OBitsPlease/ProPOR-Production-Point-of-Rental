@@ -71,35 +71,40 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
   ipcMain.handle('items:getAll', () => getDb().items.getAll())
 
   ipcMain.handle('items:save', (_, item) => {
-    const db = getDb()
-    if (item.id) {
-      const idx = db.data.items.findIndex(i => i.id === item.id)
-      if (idx !== -1) db.data.items[idx] = { ...db.data.items[idx], ...item, department_id: item.department_id ? parseInt(item.department_id) : null }
-      db.save()
-      return item.id
-    } else {
-      const id = db.nextId('items')
-      db.data.items.push({
-        id, name: item.name, sku: item.sku || '', barcode: item.barcode || '',
-        serial: item.serial || '',
-        department_id: item.department_id ? parseInt(item.department_id) : null,
-        length: item.length, width: item.width, height: item.height,
-        weight: item.weight || 0, quantity: item.quantity || 1,
-        unique_serials: item.unique_serials || 0,
-        unit_serials:   Array.isArray(item.unit_serials) ? item.unit_serials : [],
-        can_rotate_lr:        item.can_rotate_lr        !== undefined ? item.can_rotate_lr        : 1,
-        can_tip_side:         item.can_tip_side         !== undefined ? item.can_tip_side         : 1,
-        can_flip:             item.can_flip             !== undefined ? item.can_flip             : 1,
-        can_stack_on_others:  item.can_stack_on_others  !== undefined ? item.can_stack_on_others  : 1,
-        allow_stacking_on_top:item.allow_stacking_on_top!== undefined ? item.allow_stacking_on_top: 1,
-        max_stack_weight:     item.max_stack_weight     || 0,
-        group_id: item.group_id || null,
-        case_id: item.case_id || null,
-        case_qty: item.case_qty || 1,
-        notes: item.notes || ''
-      })
-      db.save()
-      return id
+    try {
+      const db = getDb()
+      if (item.id) {
+        const idx = db.data.items.findIndex(i => i.id === item.id)
+        if (idx !== -1) db.data.items[idx] = { ...db.data.items[idx], ...item, department_id: item.department_id ? parseInt(item.department_id) : null, group_id: item.group_id ? parseInt(item.group_id) : null }
+        db.save()
+        return item.id
+      } else {
+        const id = db.nextId('items')
+        db.data.items.push({
+          id, name: item.name, sku: item.sku || '', barcode: item.barcode || '',
+          serial: item.serial || '',
+          department_id: item.department_id ? parseInt(item.department_id) : null,
+          length: item.length, width: item.width, height: item.height,
+          weight: item.weight || 0, quantity: item.quantity || 1,
+          unique_serials: item.unique_serials || 0,
+          unit_serials:   Array.isArray(item.unit_serials) ? item.unit_serials : [],
+          can_rotate_lr:        item.can_rotate_lr        !== undefined ? item.can_rotate_lr        : 1,
+          can_tip_side:         item.can_tip_side         !== undefined ? item.can_tip_side         : 1,
+          can_flip:             item.can_flip             !== undefined ? item.can_flip             : 1,
+          can_stack_on_others:  item.can_stack_on_others  !== undefined ? item.can_stack_on_others  : 1,
+          allow_stacking_on_top:item.allow_stacking_on_top!== undefined ? item.allow_stacking_on_top: 1,
+          max_stack_weight:     item.max_stack_weight     || 0,
+          group_id: item.group_id ? parseInt(item.group_id) : null,
+          case_id: item.case_id || null,
+          case_qty: item.case_qty || 1,
+          notes: item.notes || ''
+        })
+        db.save()
+        return id
+      }
+    } catch (err) {
+      console.error('[items:save] ERROR:', err)
+      throw err
     }
   })
 
@@ -462,7 +467,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
         barcode: c.barcode || '',
         serial: c.serial || '',
         color: c.color || '#f59e0b',
-        group_id: c.group_id || null,
+        group_id: c.group_id ? parseInt(c.group_id) : null,
         length: c.length || 24,
         width:  c.width  || 24,
         height: c.height || 24,

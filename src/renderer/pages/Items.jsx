@@ -440,9 +440,9 @@ export default function Items() {
 
   const topGroups = groups.filter(g => !g.parent_id)
   const subgroupsOf = (pid) => groups.filter(g => g.parent_id === pid)
-  const itemsInGroup = (gid) => items.filter(i => i.group_id === gid)
+  const itemsInGroup = (gid) => items.filter(i => i.group_id == gid)
   const ungroupedItems = items.filter(i => !i.group_id)
-  const casesInGroup = (gid) => cases.filter(c => c.group_id === gid)
+  const casesInGroup = (gid) => cases.filter(c => c.group_id == gid)
   const ungroupedCases = cases.filter(c => !c.group_id || !groups.find(g => g.id === c.group_id))
 
   const lsearch = search.toLowerCase()
