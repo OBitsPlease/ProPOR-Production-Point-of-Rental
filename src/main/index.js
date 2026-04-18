@@ -203,7 +203,7 @@ let _tunnelRestarting = false
 function spawnTunnel(bin, urlFile) {
   _tunnelBin = bin
   _tunnelUrlFile = urlFile
-  cloudflaredProcess = spawn(bin, ['tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', `http://localhost:${HTTP_PORT}`], {
+  cloudflaredProcess = spawn(bin, ['tunnel', '--no-autoupdate', '--protocol', 'h2mux', '--url', `http://localhost:${HTTP_PORT}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 

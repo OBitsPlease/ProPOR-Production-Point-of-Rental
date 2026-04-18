@@ -2,7 +2,16 @@
 
 **Production Point of Rental** — Concert Production warehouse management software, event booking calendar, address book, use barcode scanners, import inventory from excel, 3D visualizer and autoloader for most efficient truck loading of concert production gear, export truck pack call sheet and event info for crew.  This app is free to test during development.
 
-*v1.2.0 — April 2026*
+*v2.1.22 — April 2026*
+
+---
+
+## Troubleshooting
+
+### Remote Access / Tunnel Errors (Error 1033 / 530)
+If you see a **Cloudflare Tunnel error** when accessing the app remotely, your **router or ISP may be blocking the tunnel connection**. This is a network-level block, not an app issue.
+
+**Fix:** Switch to a different network — a phone hotspot works well. The tunnel will connect immediately on an unrestricted network.
 
 ---
 
