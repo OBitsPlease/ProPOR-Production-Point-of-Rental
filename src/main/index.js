@@ -317,9 +317,15 @@ app.whenReady().then(async () => {
   const isDev = await createWindow()
 
   // ── Start local HTTP server (serves dist/ + REST API for browser access) ────
-  const distDir = app.isPackaged
-    ? path.join(process.resourcesPath, 'app', 'dist')
-    : path.join(__dirname, '../../dist')
+  // dist/ is unpacked from asar so Node's plain fs can serve it over HTTP.
+  // Try app.asar.unpacked first (asarUnpack configured), fall back to getAppPath.
+  let distDir
+  if (app.isPackaged) {
+    const unpacked = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist')
+    distDir = fs.existsSync(unpacked) ? unpacked : path.join(app.getAppPath(), 'dist')
+  } else {
+    distDir = path.join(__dirname, '../../dist')
+  }
   httpServer = startHttpServer(distDir)
 
   // ── Start Cloudflare Quick Tunnel ────────────────────────────────────────────

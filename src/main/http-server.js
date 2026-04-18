@@ -597,9 +597,14 @@ function handleStatic(req, res, distDir) {
     return res.end(html)
   }
 
-  // Stream other static files
-  res.writeHead(200, { 'Content-Type': mime })
-  fs.createReadStream(filePath).pipe(res)
+  // Read other static files into memory and send (works inside asar.unpacked)
+  try {
+    const data = fs.readFileSync(filePath)
+    res.writeHead(200, { 'Content-Type': mime })
+    return res.end(data)
+  } catch (e) {
+    res.writeHead(404); return res.end('Not found')
+  }
 }
 
 // ── Main export: start the HTTP server ───────────────────────────────────────

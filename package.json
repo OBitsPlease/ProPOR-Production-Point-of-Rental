@@ -1,6 +1,6 @@
 {
   "name": "propor-plus",
-  "version": "2.1.18",
+  "version": "2.1.19",
   "description": "ProPOR+ - Production Point of Rental Plus Truck Loading",
   "main": "src/main/index.js",
   "scripts": {
@@ -23,6 +23,9 @@
       "dist/**/*",
       "src/main/**/*",
       "assets/**/*"
+    ],
+    "asarUnpack": [
+      "dist/**/*"
     ],
     "extraResources": [
       { "from": "assets/splash.png", "to": "splash.png" },
