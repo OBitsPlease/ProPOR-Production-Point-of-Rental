@@ -542,7 +542,10 @@ export default function Items() {
         {topGroups.map(group => {
           const subs = subgroupsOf(group.id)
           const directItems = itemsInGroup(group.id)
-          const groupItemCount = subs.reduce((s, sg) => s + itemsInGroup(sg.id).length, 0) + directItems.length
+          const groupItemCount = subs.reduce((s, sg) => {
+            const sub2s = subgroupsOf(sg.id)
+            return s + itemsInGroup(sg.id).length + sub2s.reduce((s2, sg2) => s2 + itemsInGroup(sg2.id).length, 0)
+          }, 0) + directItems.length
           const isCollapsed = collapsedGroups.has(group.id)
           return (
             <div key={group.id}>
@@ -580,9 +583,11 @@ export default function Items() {
                       onEdit={() => openEditItem(item)} onDelete={() => deleteItem(item.id)}
                       onDragStart={e => handleDragStart(e, 'item', item.id)} onDragEnd={handleDragEnd} />
                   ))}
-                  {/* Subgroups */}
+                  {/* Subgroups (level 1) */}
                   {subs.map(sub => {
-                    const subItems = itemsInGroup(sub.id).filter(matchItem)
+                    const sub2s = subgroupsOf(sub.id)
+                    const directSubItems = itemsInGroup(sub.id).filter(matchItem)
+                    const subItemCount = directSubItems.length + sub2s.reduce((s2, sg2) => s2 + itemsInGroup(sg2.id).length, 0)
                     const isSubCollapsed = collapsedSubgroups.has(sub.id)
                     return (
                       <div key={sub.id}>
@@ -600,18 +605,62 @@ export default function Items() {
                           </span>
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color || group.color }} />
                           <span className="font-medium text-white/80 text-sm">{sub.name}</span>
-                          <span className="text-xs text-white/30">{subItems.length} {subItems.length === 1 ? 'item' : 'items'}</span>
+                          <span className="text-xs text-white/30">{subItemCount} {subItemCount === 1 ? 'item' : 'items'}</span>
                           <div className="ml-auto flex items-center gap-1 opacity-0 group-hover/sgrow:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => openNewGroup(sub.id)}
+                              className="flex items-center gap-1 text-xs text-white/40 hover:text-white px-1.5 py-0.5 rounded hover:bg-white/10">
+                              <FolderPlus size={10} /> + Sub
+                            </button>
                             <button onClick={() => openEditGroup(sub)} className="p-1 text-white/40 hover:text-white rounded hover:bg-white/10"><Pencil size={12} /></button>
                             <button onClick={() => deleteGroup(sub.id)} className="p-1 text-white/40 hover:text-red-400 rounded hover:bg-white/10"><Trash2 size={12} /></button>
                           </div>
                         </div>
-                        {!isSubCollapsed && subItems.map(item => (
-                          <ItemRow key={item.id} item={item} depts={depts} indent
-                            selected={selected.has(item.id)} onToggle={() => toggleSel(item.id)}
-                            onEdit={() => openEditItem(item)} onDelete={() => deleteItem(item.id)}
-                            onDragStart={e => handleDragStart(e, 'item', item.id)} onDragEnd={handleDragEnd} />
-                        ))}
+                        {!isSubCollapsed && (
+                          <div className="ml-5 border-l border-white/5">
+                            {/* Direct items in sub1 */}
+                            {directSubItems.map(item => (
+                              <ItemRow key={item.id} item={item} depts={depts} indent
+                                selected={selected.has(item.id)} onToggle={() => toggleSel(item.id)}
+                                onEdit={() => openEditItem(item)} onDelete={() => deleteItem(item.id)}
+                                onDragStart={e => handleDragStart(e, 'item', item.id)} onDragEnd={handleDragEnd} />
+                            ))}
+                            {/* Sub-subgroups (level 2) */}
+                            {sub2s.map(sub2 => {
+                              const sub2Items = itemsInGroup(sub2.id).filter(matchItem)
+                              const isSub2Collapsed = collapsedSubgroups.has(sub2.id)
+                              return (
+                                <div key={sub2.id}>
+                                  <div
+                                    className={`flex items-center gap-2 py-1.5 px-3 hover:bg-white/5 group/sg2row cursor-pointer transition-colors ${
+                                      dropOver?.zone === 'group' && dropOver?.id === sub2.id ? 'bg-blue-500/15 ring-1 ring-blue-400/40 rounded-lg' : ''
+                                    }`}
+                                    onClick={() => toggleSubgroup(sub2.id)}
+                                    onDragOver={e => { e.preventDefault(); setDropOver({ zone: 'group', id: sub2.id }) }}
+                                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(null) }}
+                                    onDrop={e => handleDropOnGroup(e, sub2.id)}
+                                  >
+                                    <span className="text-white/20 flex-shrink-0">
+                                      {isSub2Collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                                    </span>
+                                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: sub2.color || sub.color || group.color }} />
+                                    <span className="font-medium text-white/60 text-xs">{sub2.name}</span>
+                                    <span className="text-xs text-white/25">{sub2Items.length} {sub2Items.length === 1 ? 'item' : 'items'}</span>
+                                    <div className="ml-auto flex items-center gap-1 opacity-0 group-hover/sg2row:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                      <button onClick={() => openEditGroup(sub2)} className="p-1 text-white/40 hover:text-white rounded hover:bg-white/10"><Pencil size={11} /></button>
+                                      <button onClick={() => deleteGroup(sub2.id)} className="p-1 text-white/40 hover:text-red-400 rounded hover:bg-white/10"><Trash2 size={11} /></button>
+                                    </div>
+                                  </div>
+                                  {!isSub2Collapsed && sub2Items.map(item => (
+                                    <ItemRow key={item.id} item={item} depts={depts} indent
+                                      selected={selected.has(item.id)} onToggle={() => toggleSel(item.id)}
+                                      onEdit={() => openEditItem(item)} onDelete={() => deleteItem(item.id)}
+                                      onDragStart={e => handleDragStart(e, 'item', item.id)} onDragEnd={handleDragEnd} />
+                                  ))}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -642,14 +691,23 @@ export default function Items() {
             {topGroups
               .filter(group =>
                 casesInGroup(group.id).length > 0 ||
-                subgroupsOf(group.id).some(sg => casesInGroup(sg.id).length > 0)
+                subgroupsOf(group.id).some(sg =>
+                  casesInGroup(sg.id).length > 0 ||
+                  subgroupsOf(sg.id).some(sg2 => casesInGroup(sg2.id).length > 0)
+                )
               )
               .map(group => {
                 const isCaseGroupCollapsed = collapsedCaseGroups.has(group.id)
                 const directCases = casesInGroup(group.id).filter(matchCase)
-                const subsWithCases = subgroupsOf(group.id).filter(sg => casesInGroup(sg.id).length > 0)
+                const subsWithCases = subgroupsOf(group.id).filter(sg =>
+                  casesInGroup(sg.id).length > 0 ||
+                  subgroupsOf(sg.id).some(sg2 => casesInGroup(sg2.id).length > 0)
+                )
                 const totalCount = casesInGroup(group.id).length +
-                  subsWithCases.reduce((s, sg) => s + casesInGroup(sg.id).length, 0)
+                  subsWithCases.reduce((s, sg) => {
+                    const sub2Count = subgroupsOf(sg.id).reduce((s2, sg2) => s2 + casesInGroup(sg2.id).length, 0)
+                    return s + casesInGroup(sg.id).length + sub2Count
+                  }, 0)
                 return (
                   <div key={`casegroup-${group.id}`}>
                     <div
@@ -700,7 +758,9 @@ export default function Items() {
                         ))}
                         {subsWithCases.map(sub => {
                           const isCaseSubCollapsed = collapsedCaseSubgroups.has(sub.id)
-                          const subCases = casesInGroup(sub.id).filter(matchCase)
+                          const directSubCases = casesInGroup(sub.id).filter(matchCase)
+                          const sub2sWithCases = subgroupsOf(sub.id).filter(sg2 => casesInGroup(sg2.id).length > 0)
+                          const subCaseCount = directSubCases.length + sub2sWithCases.reduce((s2, sg2) => s2 + casesInGroup(sg2.id).length, 0)
                           return (
                             <div key={`casesubgroup-${sub.id}`}>
                               <div className="flex items-center gap-2 py-1.5 px-3 hover:bg-white/5 cursor-pointer transition-colors"
@@ -708,41 +768,95 @@ export default function Items() {
                                 <span className="text-white/30 flex-shrink-0">{isCaseSubCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color || group.color }} />
                                 <span className="font-medium text-white/80 text-sm">{sub.name}</span>
-                                <span className="text-xs text-white/30">{subCases.length} case{subCases.length !== 1 ? 's' : ''}</span>
+                                <span className="text-xs text-white/30">{subCaseCount} case{subCaseCount !== 1 ? 's' : ''}</span>
                               </div>
-                              {!isCaseSubCollapsed && subCases.map(c => (
-                                <div key={c.id} className="ml-5">
-                                  <div className={`flex items-center gap-2 py-1.5 px-2 hover:bg-white/5 group/crow cursor-grab active:cursor-grabbing transition-colors ${dropOver?.zone === 'case' && dropOver?.id === c.id ? 'bg-amber-500/15 ring-1 ring-amber-400/40 rounded-lg' : ''}`}
-                                    draggable onDragStart={e => handleDragStart(e, 'case', c.id)} onDragEnd={handleDragEnd}
-                                    onDragOver={e => { e.preventDefault(); setDropOver({ zone: 'case', id: c.id }) }}
-                                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(null) }}
-                                    onDrop={e => handleDropOnCase(e, c.id)} onClick={() => toggleCaseRow(c.id)}
-                                  >
-                                    <span className="text-white/30 flex-shrink-0">{collapsedCases.has(c.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
-                                    <span className="w-3 h-3 rounded flex-shrink-0" style={{ backgroundColor: c.color || '#f59e0b' }} />
-                                    <span className="font-medium text-white text-sm flex-1 min-w-0 truncate">{c.name}</span>
-                                    <span className="text-xs text-white/40 font-mono whitespace-nowrap">{c.length}×{c.width}×{c.height}"</span>
-                                    <span className="text-xs text-white/40 whitespace-nowrap">{c.weight} lbs</span>
-                                    {c.items?.length > 0 && <span className="text-xs text-white/40 whitespace-nowrap">{c.items.length} item{c.items.length !== 1 ? 's' : ''}</span>}
-                                    <div className="flex items-center gap-1 opacity-0 group-hover/crow:opacity-100 transition-opacity flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                      {c.items?.length > 0 && <button onClick={() => emptyCase(c)} className="text-xs px-2 py-0.5 rounded border border-orange-500/40 text-orange-400 hover:bg-orange-500/20 hover:border-orange-400/60 transition-colors">Empty</button>}
-                                      <button onClick={() => openEditCase(c)} className="p-1 text-white/40 hover:text-white rounded hover:bg-white/10"><Pencil size={13} /></button>
-                                      <button onClick={() => deleteCase(c.id)} className="p-1 text-white/40 hover:text-red-400 rounded hover:bg-white/10"><Trash2 size={13} /></button>
-                                    </div>
-                                  </div>
-                                  {!collapsedCases.has(c.id) && c.items?.length > 0 && (
-                                    <div className="ml-8 border-l border-white/10">
-                                      {c.items.map((ci, idx) => (
-                                        <div key={idx} className="flex items-center gap-2 py-1 px-3 text-sm text-white/50">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0" />
-                                          <span>{ci.name || ci.id}</span>
-                                          {(ci.qty || 1) > 1 && <span className="text-xs text-white/30">×{ci.qty}</span>}
+                              {!isCaseSubCollapsed && (
+                                <div className="ml-5 border-l border-white/5">
+                                  {/* Direct cases in sub1 */}
+                                  {directSubCases.map(c => (
+                                    <div key={c.id}>
+                                      <div className={`flex items-center gap-2 py-1.5 px-2 hover:bg-white/5 group/crow cursor-grab active:cursor-grabbing transition-colors ${dropOver?.zone === 'case' && dropOver?.id === c.id ? 'bg-amber-500/15 ring-1 ring-amber-400/40 rounded-lg' : ''}`}
+                                        draggable onDragStart={e => handleDragStart(e, 'case', c.id)} onDragEnd={handleDragEnd}
+                                        onDragOver={e => { e.preventDefault(); setDropOver({ zone: 'case', id: c.id }) }}
+                                        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(null) }}
+                                        onDrop={e => handleDropOnCase(e, c.id)} onClick={() => toggleCaseRow(c.id)}
+                                      >
+                                        <span className="text-white/30 flex-shrink-0">{collapsedCases.has(c.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
+                                        <span className="w-3 h-3 rounded flex-shrink-0" style={{ backgroundColor: c.color || '#f59e0b' }} />
+                                        <span className="font-medium text-white text-sm flex-1 min-w-0 truncate">{c.name}</span>
+                                        <span className="text-xs text-white/40 font-mono whitespace-nowrap">{c.length}×{c.width}×{c.height}"</span>
+                                        <span className="text-xs text-white/40 whitespace-nowrap">{c.weight} lbs</span>
+                                        {c.items?.length > 0 && <span className="text-xs text-white/40 whitespace-nowrap">{c.items.length} item{c.items.length !== 1 ? 's' : ''}</span>}
+                                        <div className="flex items-center gap-1 opacity-0 group-hover/crow:opacity-100 transition-opacity flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                          {c.items?.length > 0 && <button onClick={() => emptyCase(c)} className="text-xs px-2 py-0.5 rounded border border-orange-500/40 text-orange-400 hover:bg-orange-500/20 hover:border-orange-400/60 transition-colors">Empty</button>}
+                                          <button onClick={() => openEditCase(c)} className="p-1 text-white/40 hover:text-white rounded hover:bg-white/10"><Pencil size={13} /></button>
+                                          <button onClick={() => deleteCase(c.id)} className="p-1 text-white/40 hover:text-red-400 rounded hover:bg-white/10"><Trash2 size={13} /></button>
                                         </div>
-                                      ))}
+                                      </div>
+                                      {!collapsedCases.has(c.id) && c.items?.length > 0 && (
+                                        <div className="ml-8 border-l border-white/10">
+                                          {c.items.map((ci, idx) => (
+                                            <div key={idx} className="flex items-center gap-2 py-1 px-3 text-sm text-white/50">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0" />
+                                              <span>{ci.name || ci.id}</span>
+                                              {(ci.qty || 1) > 1 && <span className="text-xs text-white/30">×{ci.qty}</span>}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
+                                  ))}
+                                  {/* Sub-subgroups (level 2) with cases */}
+                                  {sub2sWithCases.map(sub2 => {
+                                    const isCaseSub2Collapsed = collapsedCaseSubgroups.has(sub2.id)
+                                    const sub2Cases = casesInGroup(sub2.id).filter(matchCase)
+                                    return (
+                                      <div key={`casesub2-${sub2.id}`}>
+                                        <div className="flex items-center gap-2 py-1.5 px-3 hover:bg-white/5 cursor-pointer transition-colors"
+                                          onClick={() => toggleCaseSubgroup(sub2.id)}>
+                                          <span className="text-white/20 flex-shrink-0">{isCaseSub2Collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>
+                                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: sub2.color || sub.color || group.color }} />
+                                          <span className="font-medium text-white/60 text-xs">{sub2.name}</span>
+                                          <span className="text-xs text-white/25">{sub2Cases.length} case{sub2Cases.length !== 1 ? 's' : ''}</span>
+                                        </div>
+                                        {!isCaseSub2Collapsed && sub2Cases.map(c => (
+                                          <div key={c.id} className="ml-5">
+                                            <div className={`flex items-center gap-2 py-1.5 px-2 hover:bg-white/5 group/crow cursor-grab active:cursor-grabbing transition-colors ${dropOver?.zone === 'case' && dropOver?.id === c.id ? 'bg-amber-500/15 ring-1 ring-amber-400/40 rounded-lg' : ''}`}
+                                              draggable onDragStart={e => handleDragStart(e, 'case', c.id)} onDragEnd={handleDragEnd}
+                                              onDragOver={e => { e.preventDefault(); setDropOver({ zone: 'case', id: c.id }) }}
+                                              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(null) }}
+                                              onDrop={e => handleDropOnCase(e, c.id)} onClick={() => toggleCaseRow(c.id)}
+                                            >
+                                              <span className="text-white/30 flex-shrink-0">{collapsedCases.has(c.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
+                                              <span className="w-3 h-3 rounded flex-shrink-0" style={{ backgroundColor: c.color || '#f59e0b' }} />
+                                              <span className="font-medium text-white text-sm flex-1 min-w-0 truncate">{c.name}</span>
+                                              <span className="text-xs text-white/40 font-mono whitespace-nowrap">{c.length}×{c.width}×{c.height}"</span>
+                                              <span className="text-xs text-white/40 whitespace-nowrap">{c.weight} lbs</span>
+                                              {c.items?.length > 0 && <span className="text-xs text-white/40 whitespace-nowrap">{c.items.length} item{c.items.length !== 1 ? 's' : ''}</span>}
+                                              <div className="flex items-center gap-1 opacity-0 group-hover/crow:opacity-100 transition-opacity flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                                {c.items?.length > 0 && <button onClick={() => emptyCase(c)} className="text-xs px-2 py-0.5 rounded border border-orange-500/40 text-orange-400 hover:bg-orange-500/20 hover:border-orange-400/60 transition-colors">Empty</button>}
+                                                <button onClick={() => openEditCase(c)} className="p-1 text-white/40 hover:text-white rounded hover:bg-white/10"><Pencil size={13} /></button>
+                                                <button onClick={() => deleteCase(c.id)} className="p-1 text-white/40 hover:text-red-400 rounded hover:bg-white/10"><Trash2 size={13} /></button>
+                                              </div>
+                                            </div>
+                                            {!collapsedCases.has(c.id) && c.items?.length > 0 && (
+                                              <div className="ml-8 border-l border-white/10">
+                                                {c.items.map((ci, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2 py-1 px-3 text-sm text-white/50">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0" />
+                                                    <span>{ci.name || ci.id}</span>
+                                                    {(ci.qty || 1) > 1 && <span className="text-xs text-white/30">×{ci.qty}</span>}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )
+                                  })}
                                 </div>
-                              ))}
+                              )}
                             </div>
                           )
                         })}
@@ -850,9 +964,12 @@ export default function Items() {
                 {topGroups.map(g => (
                   <optgroup key={g.id} label={g.name}>
                     <option value={g.id}>{g.name} (top level)</option>
-                    {subgroupsOf(g.id).map(sg => (
-                      <option key={sg.id} value={sg.id}>{sg.name}</option>
-                    ))}
+                    {subgroupsOf(g.id).flatMap(sg => [
+                      <option key={sg.id} value={sg.id}>↳ {sg.name}</option>,
+                      ...subgroupsOf(sg.id).map(sg2 => (
+                        <option key={sg2.id} value={sg2.id}>↳ ↳ {sg2.name}</option>
+                      ))
+                    ])}
                   </optgroup>
                 ))}
               </select>
@@ -957,9 +1074,12 @@ export default function Items() {
                 {topGroups.map(g => (
                   <optgroup key={g.id} label={g.name}>
                     <option value={g.id}>{g.name} (top level)</option>
-                    {subgroupsOf(g.id).map(sg => (
-                      <option key={sg.id} value={sg.id}>{sg.name}</option>
-                    ))}
+                    {subgroupsOf(g.id).flatMap(sg => [
+                      <option key={sg.id} value={sg.id}>↳ {sg.name}</option>,
+                      ...subgroupsOf(sg.id).map(sg2 => (
+                        <option key={sg2.id} value={sg2.id}>↳ ↳ {sg2.name}</option>
+                      ))
+                    ])}
                   </optgroup>
                 ))}
               </select>
