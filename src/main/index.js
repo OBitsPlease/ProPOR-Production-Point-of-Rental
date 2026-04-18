@@ -103,45 +103,96 @@ async function createWindow() {
 }
 
 // ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
-function findCloudflared() {
-  // 1. Prefer bundled binary shipped with the app.
-  //    On Windows the installer extracts to Program Files which may be read-only,
-  //    so we copy the binary to userData on first use so it can always be executed.
+
+// Download a file following redirects
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const https = require('https')
+    const file = fs.createWriteStream(dest)
+    const cleanup = () => { try { fs.unlinkSync(dest) } catch (_) {} }
+
+    const doGet = (urlStr) => {
+      https.get(urlStr, { timeout: 30000 }, (res) => {
+        if ([301, 302, 307, 308].includes(res.statusCode)) {
+          res.resume()
+          return doGet(res.headers.location)
+        }
+        if (res.statusCode !== 200) {
+          file.close(); cleanup()
+          return reject(new Error(`HTTP ${res.statusCode} downloading cloudflared`))
+        }
+        res.pipe(file)
+        file.on('finish', () => { file.close(); resolve() })
+        file.on('error', (e) => { file.close(); cleanup(); reject(e) })
+      }).on('error', (e) => { file.close(); cleanup(); reject(e) })
+    }
+    doGet(url)
+  })
+}
+
+// Ensure cloudflared binary is ready to execute — async so we can download if needed
+async function prepareCloudflaredBin() {
+  const isWin = process.platform === 'win32'
+  const ext = isWin ? '.exe' : ''
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64'
-  const ext  = process.platform === 'win32' ? '.exe' : ''
-  const platform = process.platform === 'win32' ? 'windows' : 'darwin'
+  const platform = isWin ? 'windows' : 'darwin'
   const bundledName = `cloudflared-${platform}-${arch}${ext}`
 
-  const sourcePath = app.isPackaged
+  const cacheDir = path.join(app.getPath('userData'), 'bin')
+  if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
+  const cachePath = path.join(cacheDir, bundledName)
+
+  const unblock = (p) => {
+    if (isWin) {
+      // Remove Zone.Identifier ADS so Windows SmartScreen doesn't block execution
+      try {
+        require('child_process').execFileSync(
+          'powershell',
+          ['-NoProfile', '-NonInteractive', '-Command', `Unblock-File -LiteralPath "${p}"`],
+          { stdio: 'ignore', timeout: 15000 }
+        )
+      } catch (_) {}
+    } else {
+      try { fs.chmodSync(p, 0o755) } catch (_) {}
+      try { require('child_process').execFileSync('xattr', ['-d', 'com.apple.quarantine', p], { stdio: 'ignore' }) } catch (_) {}
+    }
+  }
+
+  // 1. Already cached in userData — just unblock and return
+  if (fs.existsSync(cachePath)) {
+    unblock(cachePath)
+    return cachePath
+  }
+
+  // 2. Try bundled binary shipped in resources/bin
+  const bundledPath = app.isPackaged
     ? path.join(process.resourcesPath, 'bin', bundledName)
     : path.join(__dirname, '../../assets/bin', bundledName)
 
-  if (fs.existsSync(sourcePath)) {
-    // On Windows: copy to userData so the binary is always writable/executable
-    if (process.platform === 'win32') {
-      try {
-        const destDir = path.join(app.getPath('userData'), 'bin')
-        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true })
-        const destPath = path.join(destDir, bundledName)
-        if (!fs.existsSync(destPath)) fs.copyFileSync(sourcePath, destPath)
-        return destPath
-      } catch (e) {
-        console.warn('[cloudflared] Could not copy binary to userData:', e.message)
-        return sourcePath
-      }
+  if (fs.existsSync(bundledPath)) {
+    try {
+      fs.copyFileSync(bundledPath, cachePath)
+      unblock(cachePath)
+      console.log('[cloudflared] Using bundled binary:', cachePath)
+      return cachePath
+    } catch (e) {
+      console.warn('[cloudflared] Could not copy bundled binary:', e.message)
+      try { fs.unlinkSync(cachePath) } catch (_) {}
     }
-    // macOS/Linux: ensure executable, strip quarantine
-    try { fs.chmodSync(sourcePath, 0o755) } catch (_) {}
-    try { require('child_process').execFileSync('xattr', ['-d', 'com.apple.quarantine', sourcePath], { stdio: 'ignore' }) } catch (_) {}
-    return sourcePath
   }
 
-  // 2. System installs (Homebrew / PATH)
-  for (const c of ['/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared', '/usr/bin/cloudflared', 'cloudflared']) {
-    if (c.startsWith('/') && !fs.existsSync(c)) continue
-    return c
+  // 3. Download directly from GitHub releases
+  const dlUrl = `https://github.com/cloudflare/cloudflared/releases/latest/download/${bundledName}`
+  console.log('[cloudflared] Downloading from', dlUrl)
+  try {
+    await downloadFile(dlUrl, cachePath)
+    unblock(cachePath)
+    console.log('[cloudflared] Download complete:', cachePath)
+    return cachePath
+  } catch (e) {
+    console.error('[cloudflared] Download failed:', e.message)
+    return null
   }
-  return null
 }
 
 // Spawn cloudflared and wire up stdout/stderr to capture the tunnel URL
@@ -197,11 +248,9 @@ function spawnTunnel(bin, urlFile) {
   })
 }
 
-// Install cloudflared via Homebrew silently in the background, then launch tunnel
+// Install cloudflared via Homebrew silently in the background, then launch tunnel (macOS only)
 function installViaBrewThenLaunch(urlFile) {
   console.log('[cloudflared] Attempting silent brew install...')
-
-  // Find brew executable
   const brewBin = fs.existsSync('/opt/homebrew/bin/brew')
     ? '/opt/homebrew/bin/brew'
     : fs.existsSync('/usr/local/bin/brew')
@@ -212,15 +261,11 @@ function installViaBrewThenLaunch(urlFile) {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, HOMEBREW_NO_AUTO_UPDATE: '1', HOMEBREW_NO_ANALYTICS: '1' },
   })
-
-  brew.on('error', (err) => {
-    console.warn('[cloudflared] brew install failed:', err.message)
-  })
-
-  brew.on('exit', (code) => {
+  brew.on('error', (err) => { console.warn('[cloudflared] brew install failed:', err.message) })
+  brew.on('exit', async (code) => {
     if (code === 0) {
       console.log('[cloudflared] brew install succeeded, starting tunnel...')
-      const bin = findCloudflared()
+      const bin = await prepareCloudflaredBin()
       if (bin) spawnTunnel(bin, urlFile)
     } else {
       console.warn('[cloudflared] brew install exited with code', code)
@@ -228,19 +273,18 @@ function installViaBrewThenLaunch(urlFile) {
   })
 }
 
-function startCloudflaredTunnel() {
+async function startCloudflaredTunnel() {
   const urlFile = path.join(app.getPath('userData'), 'remote-access.txt')
-  const bin = findCloudflared()
+  const bin = await prepareCloudflaredBin()
 
   if (bin) {
-    console.log('[cloudflared] Using binary:', bin)
     spawnTunnel(bin, urlFile)
   } else if (process.platform === 'darwin') {
-    // No binary found — try installing via Homebrew silently
-    console.log('[cloudflared] Binary not found, trying brew install...')
+    // prepareCloudflaredBin already tried download; try brew as last resort
+    console.log('[cloudflared] Trying brew as last resort...')
     installViaBrewThenLaunch(urlFile)
   } else {
-    console.warn('[cloudflared] No binary found and auto-install not supported on this platform')
+    console.warn('[cloudflared] Could not obtain cloudflared binary on this platform')
   }
 }
 
