@@ -103,7 +103,7 @@ async function createWindow() {
 
 // ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
 function findCloudflared() {
-  // 1. Prefer bundled binary (packaged inside the .app / installer)
+  // 1. Prefer bundled binary shipped with the app
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64'
   const ext  = process.platform === 'win32' ? '.exe' : ''
   const platform = process.platform === 'win32' ? 'windows' : 'darwin'
@@ -114,35 +114,25 @@ function findCloudflared() {
     : path.join(__dirname, '../../assets/bin', bundledName)
 
   if (fs.existsSync(bundledPath)) {
-    // Ensure executable on mac/linux
     if (process.platform !== 'win32') {
+      // Ensure executable bit is set
       try { fs.chmodSync(bundledPath, 0o755) } catch (_) {}
+      // Remove macOS Gatekeeper quarantine flag (set on downloaded files)
+      try { require('child_process').execFileSync('xattr', ['-d', 'com.apple.quarantine', bundledPath], { stdio: 'ignore' }) } catch (_) {}
     }
     return bundledPath
   }
 
-  // 2. Fall back to system installs (Homebrew, PATH)
-  const candidates = [
-    '/opt/homebrew/bin/cloudflared',
-    '/usr/local/bin/cloudflared',
-    '/usr/bin/cloudflared',
-    'cloudflared',
-  ]
-  for (const c of candidates) {
-    try {
-      if (c.startsWith('/') && !fs.existsSync(c)) continue
-      return c
-    } catch (_) { continue }
+  // 2. System installs (Homebrew / PATH)
+  for (const c of ['/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared', '/usr/bin/cloudflared', 'cloudflared']) {
+    if (c.startsWith('/') && !fs.existsSync(c)) continue
+    return c
   }
-  return 'cloudflared'
+  return null
 }
 
-function startCloudflaredTunnel() {
-  const bin = findCloudflared()
-  const urlFile = path.join(app.getPath('userData'), 'remote-access.txt')
-
-  console.log('[cloudflared] Starting tunnel on port', HTTP_PORT)
-
+// Spawn cloudflared and wire up stdout/stderr to capture the tunnel URL
+function spawnTunnel(bin, urlFile) {
   cloudflaredProcess = spawn(bin, ['tunnel', '--url', `http://localhost:${HTTP_PORT}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -156,7 +146,6 @@ function startCloudflaredTunnel() {
     if (match && !tunnelUrl) {
       tunnelUrl = match[0]
       console.log('[cloudflared] Tunnel URL:', tunnelUrl)
-
       const content = [
         'ProPOR+ Remote Access',
         '======================',
@@ -173,7 +162,6 @@ function startCloudflaredTunnel() {
         '',
         'Generated: ' + new Date().toLocaleString(),
       ].join('\n')
-
       fs.writeFileSync(urlFile, content, 'utf8')
       shell.openPath(urlFile)
     }
@@ -181,35 +169,61 @@ function startCloudflaredTunnel() {
 
   cloudflaredProcess.stdout.on('data', onData)
   cloudflaredProcess.stderr.on('data', onData)
-
   cloudflaredProcess.on('error', (err) => {
-    if (err.code === 'ENOENT') {
-      console.warn('[cloudflared] Not installed. Install with: brew install cloudflared')
-      const msg = [
-        'Remote Access Setup Required',
-        '=============================',
-        '',
-        'cloudflared is not installed on this computer.',
-        '',
-        'To enable remote access, install it with:',
-        '',
-        '  brew install cloudflared',
-        '',
-        '(Requires Homebrew — https://brew.sh)',
-        '',
-        'After installing, restart ProPOR+ to get your tunnel URL.',
-      ].join('\n')
-      fs.writeFileSync(urlFile, msg, 'utf8')
-      shell.openPath(urlFile)
-    } else {
-      console.error('[cloudflared] Error:', err.message)
-    }
-  })
-
-  cloudflaredProcess.on('exit', (code) => {
-    console.log('[cloudflared] Process exited with code', code)
+    console.error('[cloudflared] Spawn error:', err.message)
     cloudflaredProcess = null
   })
+  cloudflaredProcess.on('exit', (code) => {
+    console.log('[cloudflared] Exited with code', code)
+    cloudflaredProcess = null
+  })
+}
+
+// Install cloudflared via Homebrew silently in the background, then launch tunnel
+function installViaBrewThenLaunch(urlFile) {
+  console.log('[cloudflared] Attempting silent brew install...')
+
+  // Find brew executable
+  const brewBin = fs.existsSync('/opt/homebrew/bin/brew')
+    ? '/opt/homebrew/bin/brew'
+    : fs.existsSync('/usr/local/bin/brew')
+      ? '/usr/local/bin/brew'
+      : 'brew'
+
+  const brew = spawn(brewBin, ['install', 'cloudflared'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, HOMEBREW_NO_AUTO_UPDATE: '1', HOMEBREW_NO_ANALYTICS: '1' },
+  })
+
+  brew.on('error', (err) => {
+    console.warn('[cloudflared] brew install failed:', err.message)
+  })
+
+  brew.on('exit', (code) => {
+    if (code === 0) {
+      console.log('[cloudflared] brew install succeeded, starting tunnel...')
+      const bin = findCloudflared()
+      if (bin) spawnTunnel(bin, urlFile)
+    } else {
+      console.warn('[cloudflared] brew install exited with code', code)
+    }
+  })
+}
+
+function startCloudflaredTunnel() {
+  const urlFile = path.join(app.getPath('userData'), 'remote-access.txt')
+  const bin = findCloudflared()
+
+  if (bin) {
+    console.log('[cloudflared] Using binary:', bin)
+    spawnTunnel(bin, urlFile)
+  } else if (process.platform === 'darwin') {
+    // No binary found — try installing via Homebrew silently
+    console.log('[cloudflared] Binary not found, trying brew install...')
+    installViaBrewThenLaunch(urlFile)
+  } else {
+    console.warn('[cloudflared] No binary found and auto-install not supported on this platform')
+  }
 }
 
 app.whenReady().then(async () => {
