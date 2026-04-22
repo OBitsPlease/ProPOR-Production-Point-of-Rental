@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { BookUser, Plus, Trash2, ChevronDown, ChevronUp, Search, X, MapPin, Building2, BedDouble, Phone, Mail, Globe, Users, User } from 'lucide-react'
 
 const TABS = [
@@ -60,12 +60,22 @@ export default function AddressBook() {
   const openEdit = (entry) => { setForm({ ...entry }); setEditing(entry) }
   const closeModal = () => setEditing(null)
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!form.name?.trim()) return
     await window.electronAPI.addressBook.save({ ...form, id: editing !== 'new' ? editing.id : undefined })
     closeModal()
     load()
-  }
+  }, [form, editing])
+
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save() }
+      if (e.key === 'Escape') { e.preventDefault(); closeModal() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing, save])
 
   const del = async (id) => {
     if (!confirm('Delete this entry?')) return

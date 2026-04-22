@@ -2,6 +2,74 @@
 // based on their text content. Persisted in localStorage.
 
 const STORAGE_KEY = 'tp_hover_tips_enabled'
+const TITLE_GUARD_KEY = 'data-title-guard'
+const TITLE_TEXT_KEY = 'data-title-text'
+
+function attachTitleGuard(el) {
+  if (el.getAttribute(TITLE_GUARD_KEY) === '1') return
+
+  const initialTitle = normalize(el.getAttribute('title'))
+  if (initialTitle) el.setAttribute(TITLE_TEXT_KEY, initialTitle)
+
+  const showTitle = () => {
+    const text = normalize(el.getAttribute(TITLE_TEXT_KEY))
+    if (text) el.setAttribute('title', text)
+  }
+
+  const hideTitle = () => {
+    const current = normalize(el.getAttribute('title'))
+    if (current) el.setAttribute(TITLE_TEXT_KEY, current)
+    el.removeAttribute('title')
+  }
+
+  el.addEventListener('mouseenter', showTitle)
+  el.addEventListener('mouseleave', hideTitle)
+  el.addEventListener('mousedown', hideTitle)
+  el.addEventListener('blur', hideTitle)
+  el.__tpTitleGuardHandlers = { showTitle, hideTitle }
+  el.setAttribute(TITLE_GUARD_KEY, '1')
+}
+
+function detachTitleGuard(el) {
+  const handlers = el.__tpTitleGuardHandlers
+  if (!handlers) return
+  el.removeEventListener('mouseenter', handlers.showTitle)
+  el.removeEventListener('mouseleave', handlers.hideTitle)
+  el.removeEventListener('mousedown', handlers.hideTitle)
+  el.removeEventListener('blur', handlers.hideTitle)
+  delete el.__tpTitleGuardHandlers
+  el.removeAttribute(TITLE_GUARD_KEY)
+}
+
+function attachAutoTipHandlers(el) {
+  if (el.__tpHoverTipHandlers) return
+
+  const showTip = () => {
+    if (!getHoverTipsEnabled()) return
+    const tip = normalize(el.getAttribute('data-auto-tip-text'))
+    if (tip) el.setAttribute('title', tip)
+  }
+
+  const hideTip = () => {
+    if (el.getAttribute('data-auto-tip') === '1') {
+      el.removeAttribute('title')
+    }
+  }
+
+  el.addEventListener('mouseenter', showTip)
+  el.addEventListener('mouseleave', hideTip)
+  el.addEventListener('blur', hideTip)
+  el.__tpHoverTipHandlers = { showTip, hideTip }
+}
+
+function detachAutoTipHandlers(el) {
+  const handlers = el.__tpHoverTipHandlers
+  if (!handlers) return
+  el.removeEventListener('mouseenter', handlers.showTip)
+  el.removeEventListener('mouseleave', handlers.hideTip)
+  el.removeEventListener('blur', handlers.hideTip)
+  delete el.__tpHoverTipHandlers
+}
 
 function normalize(s) {
   return (s || '').replace(/\s+/g, ' ').trim()
@@ -75,13 +143,31 @@ function buildTip(el) {
 
 export function applyHoverTips(enabled, container = document) {
   if (!container) return
+
+  container.querySelectorAll('[title], [data-title-text]').forEach(el => {
+    attachTitleGuard(el)
+    if (!enabled) {
+      if (el.getAttribute('data-auto-tip') === '1') {
+        detachTitleGuard(el)
+      } else {
+        const text = normalize(el.getAttribute(TITLE_TEXT_KEY))
+        if (text) el.setAttribute('title', text)
+      }
+    }
+  })
+
   container.querySelectorAll('button, a, [role="button"]').forEach(el => {
     const existingTitle = normalize(el.getAttribute('title'))
     const wasAutoSet = el.getAttribute('data-auto-tip') === '1'
 
     if (!enabled) {
       if (wasAutoSet) {
+        detachAutoTipHandlers(el)
+        detachTitleGuard(el)
         el.removeAttribute('title')
+        el.removeAttribute(TITLE_TEXT_KEY)
+        el.removeAttribute(TITLE_GUARD_KEY)
+        el.removeAttribute('data-auto-tip-text')
         el.removeAttribute('data-auto-tip')
       }
       return
@@ -92,8 +178,11 @@ export function applyHoverTips(enabled, container = document) {
 
     const tip = buildTip(el)
     if (tip) {
-      el.setAttribute('title', tip)
+      attachTitleGuard(el)
+      attachAutoTipHandlers(el)
+      el.setAttribute('data-auto-tip-text', tip)
       el.setAttribute('data-auto-tip', '1')
+      if (el.matches(':hover')) el.setAttribute('title', tip)
     }
   })
 }

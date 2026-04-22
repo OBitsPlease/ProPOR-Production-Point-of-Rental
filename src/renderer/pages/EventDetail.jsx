@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Save, Trash2, Check, Calendar, MapPin, Users, Package,
   Plus, X, Paperclip, Truck, ChevronDown, BookUser, History,
-  BedDouble, FileText, Search, AlertTriangle, GripVertical
+  BedDouble, FileText, Search, AlertTriangle, GripVertical, Link2, Image
 } from 'lucide-react'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -22,11 +22,14 @@ const CREW_ROLES = [
 ]
 
 const EMPTY_EVENT = {
-  name:'', client:'', event_date:'', load_in:'', load_out:'', status:'upcoming', notes:'',
+  name:'', client:'', event_date:'', load_in:'', load_in_time:'', load_out:'', load_out_time:'', status:'upcoming', notes:'',
+  warehouse_notes:'',
+  dark_stage:'', break_times:'',
   venue_name:'', venue_address:'', venue_city:'', venue_state:'',
   venue_contact_name:'', venue_contact_phone:'', venue_contact_email:'', venue_notes:'',
   hotel_name:'', hotel_address:'', hotel_checkin:'', hotel_checkout:'', hotel_confirmation:'', hotel_notes:'',
   crew:[], gear:[], files:[],
+  parking_pass: null, backstage_pass: null,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -151,6 +154,8 @@ export default function EventDetail() {
 
   // Crew new member form
   const [newCrew, setNewCrew]     = useState({ name:'', role:'', phone:'', email:'' })
+  const [crewCopied, setCrewCopied] = useState(null) // crew member id that was just copied
+  const [tunnelUrl, setTunnelUrl] = useState(null)
 
   const load = useCallback(async () => {
     if (!window.electronAPI) return
@@ -162,10 +167,25 @@ export default function EventDetail() {
       window.electronAPI.addressBook?.getAll() ?? [],
     ])
     if (ev) {
-      setEvent({ ...EMPTY_EVENT, ...ev })
+      // Auto-assign viewTokens to crew members that don't have one yet
+      let needsSave = false
+      const crew = (ev.crew || []).map(c => {
+        if (!c.viewToken) {
+          needsSave = true
+          return { ...c, viewToken: crypto.randomUUID() }
+        }
+        return c
+      })
+      const patchedEv = { ...EMPTY_EVENT, ...ev, crew }
+      setEvent(patchedEv)
+      if (needsSave) {
+        window.electronAPI.events.save({ ...patchedEv, id: Number(eventId) }).catch(() => {})
+      }
       if (!ev.gear || ev.gear.length === 0) setTab('gear')
     }
     setAllItems(its); setAllCases(css); setAllEvents(evts); setContacts(ab)
+    // Load tunnel URL for crew link copying
+    window.electronAPI?.tunnel?.getUrl?.().then(url => { if (url) setTunnelUrl(url) }).catch(() => {})
   }, [eventId])
 
   useEffect(() => { load() }, [load])
@@ -374,7 +394,8 @@ export default function EventDetail() {
   // ─── Crew management ─────────────────────────────────────────────────────
   const addCrewMember = () => {
     if (!newCrew.name.trim()) return
-    update({ crew: [...(event.crew || []), { ...newCrew, id: Date.now() }] })
+    const viewToken = crypto.randomUUID()
+    update({ crew: [...(event.crew || []), { ...newCrew, id: Date.now(), viewToken }] })
     setNewCrew({ name: '', role: '', phone: '', email: '' })
   }
 
@@ -385,7 +406,34 @@ export default function EventDetail() {
   const updateCrew = (id, patch) => {
     update({ crew: (event.crew || []).map(c => c.id === id ? { ...c, ...patch } : c) })
   }
+  // ─── Copy crew member personal link ──────────────────────────────────
+  const copyCrewLink = async (cm) => {
+    let url = tunnelUrl
+    if (!url && window.electronAPI?.tunnel?.getUrl) {
+      url = await window.electronAPI.tunnel.getUrl()
+      if (url) setTunnelUrl(url)
+    }
+    if (!url) { alert('Tunnel URL not available yet — wait a moment and try again.'); return }
+    const link = `${url}/#/crew/${cm.viewToken}`
+    navigator.clipboard.writeText(link).catch(() => {})
+    setCrewCopied(cm.id)
+    setTimeout(() => setCrewCopied(null), 2500)
+  }
 
+  // ─── Attach parking / backstage pass ─────────────────────────────────
+  const attachPass = async (passType) => {
+    const result = await window.electronAPI.events.attachPass(Number(eventId), passType)
+    if (result) {
+      const field = passType === 'parking' ? 'parking_pass' : 'backstage_pass'
+      setEvent(e => ({ ...e, [field]: result }))
+    }
+  }
+
+  const removePass = async (passType) => {
+    await window.electronAPI.events.removePass(Number(eventId), passType)
+    const field = passType === 'parking' ? 'parking_pass' : 'backstage_pass'
+    setEvent(e => ({ ...e, [field]: null }))
+  }
   // ─── Open in Load Planner ────────────────────────────────────────────────
   const openInPlanner = () => {
     navigate(`/planner/event/${eventId}`)
@@ -500,8 +548,26 @@ export default function EventDetail() {
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Load In"><input type="date" className="input-field" value={event.load_in} onChange={e => update({ load_in: e.target.value })} /></Field>
-              <Field label="Load Out"><input type="date" className="input-field" value={event.load_out} onChange={e => update({ load_out: e.target.value })} /></Field>
+              <Field label="Load In">
+                <div className="flex gap-2">
+                  <input type="date" className="input-field flex-1" value={event.load_in} onChange={e => update({ load_in: e.target.value })} />
+                  <input type="time" className="input-field w-32" value={event.load_in_time || ''} onChange={e => update({ load_in_time: e.target.value })} title="Load in time" />
+                </div>
+              </Field>
+              <Field label="Load Out">
+                <div className="flex gap-2">
+                  <input type="date" className="input-field flex-1" value={event.load_out} onChange={e => update({ load_out: e.target.value })} />
+                  <input type="time" className="input-field w-32" value={event.load_out_time || ''} onChange={e => update({ load_out_time: e.target.value })} title="Load out time" />
+                </div>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Dark Stage Times" hint="e.g. 8pm – midnight">
+                <input className="input-field" value={event.dark_stage || ''} onChange={e => update({ dark_stage: e.target.value })} placeholder="e.g. 8pm – midnight" />
+              </Field>
+              <Field label="Break / Meal Times">
+                <input className="input-field" value={event.break_times || ''} onChange={e => update({ break_times: e.target.value })} placeholder="e.g. 12pm–1pm lunch" />
+              </Field>
             </div>
             <div className="bg-dark-800 border border-dark-600 rounded-lg p-3 text-xs text-gray-400">
               <strong className="text-gray-300">Availability window:</strong>{' '}
@@ -512,6 +578,9 @@ export default function EventDetail() {
             </div>
             <Field label="Notes">
               <textarea className="input-field resize-none" rows={5} value={event.notes} onChange={e => update({ notes: e.target.value })} placeholder="General event notes…" />
+            </Field>
+            <Field label="Warehouse Notes (Calendar / PDF)">
+              <textarea className="input-field resize-none" rows={4} value={event.warehouse_notes || ''} onChange={e => update({ warehouse_notes: e.target.value })} placeholder="Pick notes for warehouse prep and truck pack team…" />
             </Field>
           </div>
         )}
@@ -581,6 +650,18 @@ export default function EventDetail() {
                         <input className="input-field text-sm py-1.5" placeholder="Phone" value={cm.phone || ''} onChange={e => updateCrew(cm.id, { phone: e.target.value })} />
                         <input className="input-field text-sm py-1.5" placeholder="Email" value={cm.email || ''} onChange={e => updateCrew(cm.id, { email: e.target.value })} />
                       </div>
+                      <button
+                        onClick={() => copyCrewLink(cm)}
+                        title="Copy personal crew view link"
+                        className={`shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                          crewCopied === cm.id
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : 'text-gray-400 hover:text-white hover:bg-dark-700 border border-transparent'
+                        }`}
+                      >
+                        <Link2 size={12} />
+                        {crewCopied === cm.id ? 'Copied!' : 'Link'}
+                      </button>
                       <button onClick={() => removeCrewMember(cm.id)} className="text-gray-600 hover:text-red-400 p-1 transition-colors shrink-0">
                         <X size={14} />
                       </button>
@@ -857,6 +938,70 @@ export default function EventDetail() {
                 ))}
               </div>
             )}
+
+            {/* Access Passes */}
+            <div className="mt-8 border-t border-dark-600 pt-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Image size={14} className="text-amber-400" />
+                <h3 className="text-sm font-semibold text-white">Access Passes</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">
+                Passes are shown to each crew member with their name watermarked diagonally across the image.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Parking Pass */}
+                <div className="bg-dark-800 border border-dark-600 rounded-xl p-4">
+                  <p className="text-xs font-semibold text-gray-400 mb-3">Parking Pass</p>
+                  {event.parking_pass ? (
+                    <div>
+                      <div className="relative rounded-lg overflow-hidden mb-3 bg-dark-700 border border-dark-500">
+                        <img
+                          src={`/api/event-files/${eventId}/${encodeURIComponent(event.parking_pass.name)}`}
+                          alt="Parking Pass"
+                          className="w-full h-28 object-cover"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mb-2">{event.parking_pass.name}</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => attachPass('parking')} className="text-xs text-gray-400 hover:text-white">Replace</button>
+                        <span className="text-gray-700">·</span>
+                        <button onClick={() => removePass('parking')} className="text-xs text-red-400 hover:text-red-300">Remove</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => attachPass('parking')} className="btn-secondary text-xs w-full">
+                      <Paperclip size={12} /> Upload Image
+                    </button>
+                  )}
+                </div>
+
+                {/* Backstage Pass */}
+                <div className="bg-dark-800 border border-dark-600 rounded-xl p-4">
+                  <p className="text-xs font-semibold text-gray-400 mb-3">Backstage Pass</p>
+                  {event.backstage_pass ? (
+                    <div>
+                      <div className="relative rounded-lg overflow-hidden mb-3 bg-dark-700 border border-dark-500">
+                        <img
+                          src={`/api/event-files/${eventId}/${encodeURIComponent(event.backstage_pass.name)}`}
+                          alt="Backstage Pass"
+                          className="w-full h-28 object-cover"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mb-2">{event.backstage_pass.name}</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => attachPass('backstage')} className="text-xs text-gray-400 hover:text-white">Replace</button>
+                        <span className="text-gray-700">·</span>
+                        <button onClick={() => removePass('backstage')} className="text-xs text-red-400 hover:text-red-300">Remove</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => attachPass('backstage')} className="btn-secondary text-xs w-full">
+                      <Paperclip size={12} /> Upload Image
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

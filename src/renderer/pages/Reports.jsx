@@ -24,6 +24,10 @@ export default function Reports() {
       alert('This plan has no calculated results yet. Open it in Load Planner and run the calculation first.')
       return
     }
+    let relatedEvent = null
+    if (fullPlan.event_id && window.electronAPI?.events?.get) {
+      relatedEvent = await window.electronAPI.events.get(fullPlan.event_id)
+    }
     const result = JSON.parse(fullPlan.result_json)
     const truck = {
       name: fullPlan.truck_name,
@@ -34,7 +38,15 @@ export default function Reports() {
       unit: fullPlan.truck_unit,
     }
     const doc = generateLoadPlanPDF(
-      { name: fullPlan.name, utilization: fullPlan.utilization, totalWeight: fullPlan.total_weight, id: fullPlan.id },
+      {
+        name: fullPlan.name,
+        utilization: fullPlan.utilization,
+        totalWeight: fullPlan.total_weight,
+        id: fullPlan.id,
+        eventName: relatedEvent?.name || fullPlan.name,
+        eventDate: relatedEvent?.event_date || relatedEvent?.load_in || '',
+        warehouseNotes: relatedEvent?.warehouse_notes || '',
+      },
       result.packed || [],
       result.unpacked || [],
       result.callSheet || [],
@@ -54,7 +66,7 @@ export default function Reports() {
     <div className="p-6 overflow-y-auto h-full">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Reports</h1>
-        <p className="text-gray-400 text-sm mt-1">Export load plans as PDF with packer call sheets</p>
+        <p className="text-gray-400 text-sm mt-1">Export warehouse pull lists and truck pack order PDFs</p>
       </div>
 
       {plans.length === 0 ? (
@@ -107,8 +119,8 @@ export default function Reports() {
           <div>
             <div className="font-medium text-white text-sm mb-1">What's in the PDF?</div>
             <ul className="text-gray-400 text-sm space-y-1 list-disc list-inside">
-              <li><strong className="text-gray-300">Page 1+: Load Manifest</strong> — truck stats, utilization, department color legend, full item list with positions</li>
-              <li><strong className="text-gray-300">Final Page: Next Case Call Sheet</strong> — sequential numbered list for the packer, ordered back-to-front. Call position #, case name, case #/SKU, dept, dimensions, weight, and a checkbox column</li>
+              <li><strong className="text-gray-300">Page 1+: Warehouse Pull List</strong> — every line item with quantity and the case it belongs in</li>
+              <li><strong className="text-gray-300">Final Page: Truck Pack Order</strong> — case-only list with quantities in load order, plus warehouse notes</li>
             </ul>
           </div>
         </div>

@@ -15,6 +15,7 @@ export default function LoadPlanner() {
   const [depts, setDepts] = useState([])
   const [selectedTruckId, setSelectedTruckId] = useState('')
   const [planName, setPlanName] = useState('New Load Plan')
+  const [eventWarehouseNotes, setEventWarehouseNotes] = useState('')
   const [result, setResult] = useState(null) // { packed, unpacked, utilization, totalWeight, callSheet }
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
@@ -79,11 +80,13 @@ export default function LoadPlanner() {
       const ev = await window.electronAPI.events.get(parseInt(eventId))
       if (ev) {
         setPlanName(`${ev.name} — Load Plan`)
+        setEventWarehouseNotes(ev.warehouse_notes || '')
         const eventCaseIds = new Set(
           (ev.gear || []).filter(g => g._type === 'case').map(g => g.case_id)
         )
         setCases(allComputedCases.filter(c => eventCaseIds.has(c.id)))
       } else {
+        setEventWarehouseNotes('')
         setCases(allComputedCases)
       }
       return
@@ -97,6 +100,12 @@ export default function LoadPlanner() {
         setPlanName(plan.name)
         setSelectedTruckId(plan.truck_id)
         setCurrentPlanId(plan.id)
+        if (plan.event_id && window.electronAPI?.events?.get) {
+          const ev = await window.electronAPI.events.get(plan.event_id)
+          setEventWarehouseNotes(ev?.warehouse_notes || '')
+        } else {
+          setEventWarehouseNotes('')
+        }
         if (plan.result_json) {
           setResult(JSON.parse(plan.result_json))
         }
@@ -324,6 +333,7 @@ export default function LoadPlanner() {
       id: currentPlanId,
       name: planName,
       truck_id: selectedTruck.id,
+      event_id: eventId ? parseInt(eventId) : null,
       result_json: JSON.stringify(result),
       utilization: result.utilization,
       total_weight: result.totalWeight,
@@ -337,7 +347,13 @@ export default function LoadPlanner() {
   const exportPDF = async () => {
     if (!result || !selectedTruck) return
     const doc = generateLoadPlanPDF(
-      { name: planName, utilization: result.utilization, totalWeight: result.totalWeight, id: currentPlanId },
+      {
+        name: planName,
+        utilization: result.utilization,
+        totalWeight: result.totalWeight,
+        id: currentPlanId,
+        warehouseNotes: eventWarehouseNotes,
+      },
       result.packed,
       result.unpacked,
       result.callSheet,

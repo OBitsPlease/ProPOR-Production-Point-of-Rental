@@ -310,6 +310,7 @@ export default function TruckViewer3D({ truck, packed, editMode, onBoxMoved }) {
   const [clipY, setClipY] = useState(truck ? truck.width * IN_TO_M : 100)
   const [clipZ, setClipZ] = useState(truck ? truck.height * IN_TO_M : 100)
   const [perspective, setPerspective] = useState(true)
+  const [webglFailed, setWebglFailed] = useState(false)
 
   // Drag state
   const [draggingBox, setDraggingBox] = useState(null)      // the box being dragged (copy)
@@ -557,6 +558,42 @@ export default function TruckViewer3D({ truck, packed, editMode, onBoxMoved }) {
 
       {/* Canvas */}
       <div className="flex-1 relative">
+        {webglFailed ? (
+          <div className="h-full overflow-auto bg-dark-900 p-4">
+            <div className="flex items-center gap-2 mb-4 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              <span>⚠️</span>
+              <span>3D view unavailable (WebGL not supported). Showing load order table.</span>
+              <button className="ml-auto text-xs text-amber-400 hover:text-white underline" onClick={() => setWebglFailed(false)}>Retry 3D</button>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-500 border-b border-dark-600">
+                  <th className="pb-2 pr-3">#</th>
+                  <th className="pb-2 pr-3">Case</th>
+                  <th className="pb-2 pr-3">Dept</th>
+                  <th className="pb-2 pr-3">Dims (L×W×H)</th>
+                  <th className="pb-2 pr-3">Weight</th>
+                  <th className="pb-2">Position (x,y,z)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700">
+                {[...(packed || [])].sort((a, b) => (a.loadOrder || 0) - (b.loadOrder || 0)).map((b, i) => (
+                  <tr key={i} className="hover:bg-dark-800">
+                    <td className="py-2 pr-3 text-gray-400">{b.loadOrder || i + 1}</td>
+                    <td className="py-2 pr-3 text-white font-medium">{b.name}</td>
+                    <td className="py-2 pr-3">
+                      <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: b.department_color || '#6b7280' }} />
+                      <span className="text-gray-400">{b.department_name || '—'}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-gray-400 font-mono">{b.l}"×{b.w}"×{b.h}"</td>
+                    <td className="py-2 pr-3 text-gray-400">{b.weight ? `${b.weight} lbs` : '—'}</td>
+                    <td className="py-2 text-gray-500 font-mono">{Math.round(b.x)},{Math.round(b.y)},{Math.round(b.z)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
         <CanvasErrorBoundary>
           <Canvas
             camera={
@@ -567,6 +604,13 @@ export default function TruckViewer3D({ truck, packed, editMode, onBoxMoved }) {
             style={{ background: '#0a0a0f', cursor: editMode ? (draggingBox ? 'grabbing' : 'grab') : 'default' }}
             shadows
             onPointerUp={draggingBox ? handleDragEnd : undefined}
+            onCreated={({ gl }) => {
+              // Detect WebGL context loss and fall back to table view
+              const canvas = gl.domElement
+              canvas.addEventListener('webglcontextlost', () => setWebglFailed(true), { once: true })
+              // If context is already lost at creation time
+              if (!gl.getContext()) setWebglFailed(true)
+            }}
           >
             <Scene
               truck={truck}
@@ -598,6 +642,7 @@ export default function TruckViewer3D({ truck, packed, editMode, onBoxMoved }) {
             />
           </Canvas>
         </CanvasErrorBoundary>
+        )} {/* end webglFailed ternary */}
 
         <BoxTooltip box={hoveredBox} />
 

@@ -30,5 +30,8 @@ module.exports = {
       }
     },
   },
+  safelist: [
+    'transition-[width]',
+  ],
   plugins: [],
 }

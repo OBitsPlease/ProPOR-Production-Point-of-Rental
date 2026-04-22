@@ -36,7 +36,8 @@ function Toggle({ label, description, checked, onChange }) {
       </div>
       <button
         onClick={() => onChange(!checked)}
-        className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none ${
+        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!checked) } }}
+        className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
           checked ? 'bg-blue-600' : 'bg-gray-700'
         }`}
       >

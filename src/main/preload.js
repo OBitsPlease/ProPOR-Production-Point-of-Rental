@@ -82,6 +82,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     attachFile: (eventId) => ipcRenderer.invoke('events:attachFile', eventId),
     removeFile: (eventId, fileName) => ipcRenderer.invoke('events:removeFile', { eventId, fileName }),
     openFile: (filePath) => ipcRenderer.invoke('events:openFile', filePath),
+    attachPass: (eventId, passType) => ipcRenderer.invoke('events:attachPass', { eventId, passType }),
+    removePass: (eventId, passType) => ipcRenderer.invoke('events:removePass', { eventId, passType }),
   },
   repairs: {
     getAll: () => ipcRenderer.invoke('repairs:getAll'),
@@ -112,7 +114,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tunnel: {
     getUrl: () => ipcRenderer.invoke('tunnel:getUrl'),
     onUrlReady: (cb) => ipcRenderer.on('tunnel:urlReady', (_, url) => cb(url)),
-    removeListeners: () => ipcRenderer.removeAllListeners('tunnel:urlReady'),
+    onUrlChanged: (cb) => ipcRenderer.on('tunnel:urlChanged', (_, data) => cb(data)),
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('tunnel:urlReady')
+      ipcRenderer.removeAllListeners('tunnel:urlChanged')
+    },
   },
   stackPrefs: {
     getAll: () => ipcRenderer.invoke('stackPrefs:getAll'),

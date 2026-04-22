@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Tag, Plus, Pencil, Trash2, X, Check } from 'lucide-react'
 
 const PRESET_COLORS = [
@@ -22,12 +22,22 @@ export default function Departments() {
   const openEdit = (d) => { setForm({ ...d }); setEditing(d) }
   const cancel = () => setEditing(null)
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!form.name) return
     await window.electronAPI.saveDepartment({ ...form, id: editing !== 'new' ? editing.id : undefined })
     setEditing(null)
     load()
-  }
+  }, [form, editing])
+
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save() }
+      if (e.key === 'Escape') { e.preventDefault(); cancel() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing, save])
 
   const del = async (id) => {
     if (!confirm('Delete this department?')) return

@@ -4,9 +4,13 @@ const fs = require('fs')
 const http = require('http')
 const { spawn } = require('child_process')
 const { autoUpdater } = require('electron-updater')
-const { setupDatabase } = require('./db')
+const { setupDatabase, getDb } = require('./db')
 const { registerIpcHandlers } = require('./ipc-handlers')
 const { startHttpServer, PORT: HTTP_PORT } = require('./http-server')
+
+// in-process-gpu: runs the GPU in the main process so there's no separate GPU
+// process that can crash and take down the app. WebGL still works via Metal.
+app.commandLine.appendSwitch('in-process-gpu')
 
 let cloudflaredProcess = null
 let httpServer = null
@@ -210,13 +214,30 @@ function spawnTunnel(bin, urlFile) {
   let tunnelUrl = null
   const urlRegex = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i
 
-  const onData = (data) => {
-    const text = data.toString()
+  const onData = (chunk) => {
+    const text = chunk.toString()
     const match = text.match(urlRegex)
     if (match && !tunnelUrl) {
       tunnelUrl = match[0]
       currentTunnelUrl = tunnelUrl
       console.log('[cloudflared] Tunnel URL:', tunnelUrl)
+
+      // Detect if the URL changed from last session and notify renderer
+      try {
+        const db = getDb()
+        const prev = db.data.settings.lastTunnelUrl || null
+        const urlChanged = prev && prev !== tunnelUrl
+        db.data.settings.lastTunnelUrl = tunnelUrl
+        db.save()
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (urlChanged) {
+            mainWindow.webContents.send('tunnel:urlChanged', { url: tunnelUrl, prev })
+          }
+        }
+      } catch (e) {
+        console.warn('[cloudflared] Could not persist tunnel URL:', e.message)
+      }
+
       const content = [
         'ProPOR+ Remote Access',
         '======================',

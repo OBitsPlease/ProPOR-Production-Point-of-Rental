@@ -346,6 +346,7 @@ async function handleApi(req, res, pathname, searchParams) {
         } else {
           const id = db.nextId('plans')
           db.data.plans.push({ id, name: plan.name, truck_id: plan.truck_id,
+            event_id: plan.event_id || null,
             result_json: plan.result_json, utilization: plan.utilization,
             total_weight: plan.total_weight, created_at: now, updated_at: now })
           db.save(); return sendJson(res, id)
@@ -440,6 +441,7 @@ async function handleApi(req, res, pathname, searchParams) {
           db.data.events.push({ id, name: event.name || 'New Event', client: event.client || '',
             event_date: event.event_date || '', load_in: event.load_in || '', load_out: event.load_out || '',
             status: event.status || 'upcoming', notes: event.notes || '',
+            warehouse_notes: event.warehouse_notes || '',
             venue_name: event.venue_name || '', venue_address: event.venue_address || '',
             venue_city: event.venue_city || '', venue_state: event.venue_state || '',
             venue_contact_name: event.venue_contact_name || '', venue_contact_phone: event.venue_contact_phone || '',
@@ -591,6 +593,113 @@ async function handleApi(req, res, pathname, searchParams) {
         })
         db.save(); return sendJson(res, true)
       }
+    }
+
+    // ── Crew View (per-token) ─────────────────────────────────────────────────
+    if (seg[0] === 'crew' && seg[1] && method === 'GET') {
+      const token = seg[1]
+      const allEvents = db.data.events || []
+      let foundEvent = null, foundMember = null
+      for (const ev of allEvents) {
+        const member = (ev.crew || []).find(c => c.viewToken === token)
+        if (member) { foundEvent = ev; foundMember = member; break }
+      }
+      if (!foundEvent) return sendJson(res, null, 404)
+      // Return only what crew needs — no internal contact details
+      return sendJson(res, {
+        member: {
+          name: foundMember.name || '',
+          role: foundMember.role || '',
+        },
+        eventId: foundEvent.id,
+        event: {
+          name: foundEvent.name,
+          client: foundEvent.client || '',
+          status: foundEvent.status || '',
+          event_date: foundEvent.event_date || '',
+          load_in: foundEvent.load_in || '',
+          load_in_time: foundEvent.load_in_time || '',
+          load_out: foundEvent.load_out || '',
+          load_out_time: foundEvent.load_out_time || '',
+          dark_stage: foundEvent.dark_stage || '',
+          break_times: foundEvent.break_times || '',
+          venue_name: foundEvent.venue_name || '',
+          venue_address: foundEvent.venue_address || '',
+          venue_city: foundEvent.venue_city || '',
+          venue_state: foundEvent.venue_state || '',
+          venue_notes: foundEvent.venue_notes || '',
+          hotel_name: foundEvent.hotel_name || '',
+          hotel_address: foundEvent.hotel_address || '',
+          hotel_checkin: foundEvent.hotel_checkin || '',
+          hotel_checkout: foundEvent.hotel_checkout || '',
+          hotel_confirmation: foundEvent.hotel_confirmation || '',
+          hotel_notes: foundEvent.hotel_notes || '',
+          gear: (foundEvent.gear || []).map(g => ({
+            _type: g._type,
+            name: g.name,
+            color: g.color,
+            quantity: g.quantity || 1,
+            department_color: g.department_color,
+            department_name: g.department_name || '',
+            load_zone: g.load_zone || '',
+            items: g._type === 'case' ? (g.items || []).map(ci => ({ name: ci.name, qty: ci.qty || 1 })) : undefined,
+          })),
+          files: (foundEvent.files || []).map(f => ({ name: f.name, size: f.size, added_at: f.added_at })),
+          parking_pass: foundEvent.parking_pass ? { name: foundEvent.parking_pass.name } : null,
+          backstage_pass: foundEvent.backstage_pass ? { name: foundEvent.backstage_pass.name } : null,
+        },
+        packPlan: (() => {
+          // Find the most recently saved plan for this event
+          const plans = db.data.plans || []
+          const eventPlans = plans.filter(p => p.event_id === foundEvent.id)
+          if (eventPlans.length === 0) return null
+          const latest = eventPlans.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))[0]
+          try {
+            const result = JSON.parse(latest.result_json)
+            const packed = result.packed || []
+            // Rebuild callSheet sorted by loadOrder
+            const callSheet = [...packed]
+              .sort((a, b) => (a.loadOrder || 0) - (b.loadOrder || 0))
+              .map((b, i) => ({
+                position: i + 1,
+                loadOrder: b.loadOrder || i + 1,
+                name: b.name || '',
+                stackedOn: b.stackedOn || null,
+                stackedOnName: b.stackedOn
+                  ? (packed.find(p => p.id === b.stackedOn)?.name || null)
+                  : null,
+                stackCount: b.stackCount || 1,
+                z: b.z || 0,
+              }))
+            return { name: latest.name, callSheet }
+          } catch { return null }
+        })(),
+      })
+    }
+
+    // ── Event files (serve for crew view) ─────────────────────────────────────
+    if (seg[0] === 'event-files' && seg[1] && seg[2] && method === 'GET') {
+      const { app } = require('electron')
+      const eventFilesBase = path.join(app.getPath('userData'), 'event-files')
+      // Sanitize: eventId must be digits only, filename must not have path separators
+      const eventId = seg[1].replace(/[^0-9]/g, '')
+      const filename = decodeURIComponent(seg[2]).replace(/[/\\]/g, '')
+      if (!eventId || !filename) return sendJson(res, null, 400)
+      const filePath = path.join(eventFilesBase, eventId, filename)
+      // Security: prevent directory traversal
+      if (!filePath.startsWith(eventFilesBase + path.sep)) {
+        res.writeHead(403); return res.end('Forbidden')
+      }
+      if (!fs.existsSync(filePath)) { res.writeHead(404); return res.end('Not found') }
+      const ext = path.extname(filePath).toLowerCase()
+      const mimeType = MIME[ext] || 'application/octet-stream'
+      const data = fs.readFileSync(filePath)
+      res.writeHead(200, {
+        'Content-Type': mimeType,
+        'Content-Disposition': 'inline',
+        'Access-Control-Allow-Origin': '*',
+      })
+      return res.end(data)
     }
 
     // Unknown API route

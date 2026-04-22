@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import {
   Package, Plus, Pencil, Trash2, X, Check, Upload, Download, Trash,
   AlertTriangle, ChevronDown, ChevronRight, FolderPlus, Layers, Search, GripVertical,
@@ -186,6 +186,30 @@ export default function Items() {
     }
   }
   useEffect(() => { loadAll() }, [])
+
+  // Enter = save open modal, Escape = close
+  useEffect(() => {
+    const anyOpen = itemModal || caseModal || groupModal
+    if (!anyOpen) return
+    const handler = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        if (itemModal) setItemModal(null)
+        else if (caseModal) setCaseModal(null)
+        else if (groupModal) setGroupModal(null)
+      }
+      // Enter-to-save only when NOT in textarea/multiline
+      if (e.key === 'Enter' && !e.shiftKey && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault()
+        if (itemModal) saveItem()
+        else if (caseModal) saveCase()
+        else if (groupModal) saveGroup()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemModal, caseModal, groupModal, itemForm, caseForm, groupForm, unitSerials, caseUnitSerials, caseQty])
 
   // ── Item CRUD ──────────────────────────────────────────────────────
   const setI = (k, v) => setItemForm(f => ({ ...f, [k]: v }))
@@ -406,6 +430,48 @@ export default function Items() {
     const existingCaseSerials  = new Set(cases.map(c => c.serial).filter(Boolean))
     const existingCaseBarcodes = new Set(cases.map(c => c.barcode).filter(Boolean))
 
+    // Helper: resolve or auto-create a department by name
+    const resolveOrCreateDept = async (name) => {
+      if (!name) return null
+      const n = name.trim()
+      if (!n) return null
+      let dept = latestDepts.find(d => d.name.toLowerCase() === n.toLowerCase())
+      if (!dept) {
+        await api.saveDepartment({ name: n, color: '#4f8ef7' })
+        latestDepts = await api.getDepartments()
+        dept = latestDepts.find(d => d.name.toLowerCase() === n.toLowerCase())
+      }
+      return dept || null
+    }
+
+    // Helper: resolve or auto-create a group, supporting path syntax.
+    // Accepts flat name ("Stage Rack") or path ("Audio > Stage Rack > FOH").
+    // Separators: ">" or "/". Each path level is resolved or created with the correct parent.
+    const resolveOrCreateGroup = async (rawName) => {
+      if (!rawName) return null
+      const parts = rawName.split(/\s*[>/]\s*/).map(p => p.trim()).filter(Boolean)
+      if (!parts.length) return null
+
+      let parentId = null
+      let grp = null
+
+      for (const part of parts) {
+        const lp = part.toLowerCase()
+        // Prefer exact match with correct parent; fall back to any match by name
+        let found = latestGroups.find(g => g.name.toLowerCase() === lp && (g.parent_id ?? null) === parentId)
+        if (!found) found = latestGroups.find(g => g.name.toLowerCase() === lp)
+        if (!found) {
+          await api.groups.save({ name: part, color: '#4f8ef7', parent_id: parentId })
+          latestGroups = await api.groups.getAll()
+          found = latestGroups.find(g => g.name.toLowerCase() === lp && (g.parent_id ?? null) === parentId)
+        }
+        if (!found) return grp  // return deepest successfully resolved level
+        parentId = found.id
+        grp = found
+      }
+      return grp
+    }
+
     if (itemRows.length) {
       const mapped = applyMapping(itemRows, itemMapping)
       for (const item of mapped) {
@@ -416,9 +482,8 @@ export default function Items() {
           skippedItems++
           continue
         }
-        const dept = latestDepts.find(d => d.name.toLowerCase() === (item.department || '').toLowerCase())
-        // Resolve group by name — search all levels
-        const grp = latestGroups.find(g => g.name.toLowerCase() === (item.group || '').toLowerCase())
+        const dept = await resolveOrCreateDept(item.department || '')
+        const grp  = await resolveOrCreateGroup(item.group || '')
         await api.saveItem({ ...item, department_id: dept ? dept.id : null, group_id: grp ? grp.id : null })
       }
     }
@@ -432,7 +497,7 @@ export default function Items() {
           skippedCases++
           continue
         }
-        const grp = latestGroups.find(g => g.name.toLowerCase() === (c.group || '').toLowerCase())
+        const grp = await resolveOrCreateGroup(c.group || '')
         await api.cases.save({ ...c, group_id: grp ? grp.id : null })
       }
     }

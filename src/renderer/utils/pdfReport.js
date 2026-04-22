@@ -59,6 +59,39 @@ function dim(b) {
   return (b.l || b.length || 0) + 'in x ' + (b.w || b.width || 0) + 'in x ' + (b.h || b.height || 0) + 'in'
 }
 
+function buildWarehouseRows(packed) {
+  const sortedCases = [...(packed || [])].sort((a, b) => {
+    const ao = a.loadOrder || 0
+    const bo = b.loadOrder || 0
+    return ao - bo
+  })
+
+  const rows = []
+  sortedCases.forEach((c, i) => {
+    const order = String(c.loadOrder || (i + 1))
+    const caseName = c.name || 'Unnamed Case'
+    const caseQty = String(c.quantity || 1)
+    const caseItems = Array.isArray(c.items) ? c.items : []
+
+    if (caseItems.length === 0) {
+      rows.push([order, caseName, '(No contents listed)', '-', caseQty])
+      return
+    }
+
+    caseItems.forEach(ci => {
+      rows.push([
+        order,
+        caseName,
+        ci.name || `Item #${ci.id || ''}`,
+        String(ci.qty || 1),
+        caseQty,
+      ])
+    })
+  })
+
+  return rows
+}
+
 export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, departments) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const PW = doc.internal.pageSize.getWidth()
@@ -70,6 +103,25 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   const eventDate = plan.eventDate
     ? new Date(plan.eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     : date
+  const warehouseNotes = (plan.warehouseNotes || '').trim()
+  const warehouseRows = buildWarehouseRows(packed)
+  const truckOrderRows = (callSheet && callSheet.length > 0)
+    ? callSheet.map(function(row, i) {
+      return [
+        String(row.callPosition || (i + 1)),
+        row.name || '',
+        String(row.quantity || 1),
+      ]
+    })
+    : [...(packed || [])]
+      .sort((a, b) => (a.loadOrder || 0) - (b.loadOrder || 0))
+      .map(function(row, i) {
+        return [
+          String(row.loadOrder || (i + 1)),
+          row.name || '',
+          String(row.quantity || 1),
+        ]
+      })
 
   // Page 1 white background + header
   doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
@@ -79,7 +131,7 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   const sW = (PW - 28 - sg * 3) / 4
   statBox(doc, 14,            sY, sW, sH, 'UTILIZATION',  Math.round(plan.utilization || 0) + '%', C.blueLight, C.blue)
   statBox(doc, 14+sW+sg,      sY, sW, sH, 'TOTAL WEIGHT', (plan.totalWeight || 0).toLocaleString() + ' lbs', C.gray100, C.gray800)
-  statBox(doc, 14+(sW+sg)*2,  sY, sW, sH, 'ITEMS LOADED', String(packed.length), C.greenLight, C.green)
+  statBox(doc, 14+(sW+sg)*2,  sY, sW, sH, 'LINE ITEMS', String(warehouseRows.length), C.greenLight, C.green)
   statBox(doc, 14+(sW+sg)*3,  sY, sW, sH, 'DID NOT FIT',  String(unpacked.length),
     unpacked.length > 0 ? C.redLight : C.gray100, unpacked.length > 0 ? C.red : C.gray400)
 
@@ -112,7 +164,7 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   }
 
   doc.setTextColor(...C.navy); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
-  doc.text('LOAD MANIFEST', 14, y + 4)
+  doc.text('WAREHOUSE PULL LIST', 14, y + 4)
   doc.setFillColor(...C.blue); doc.rect(14, y + 5.5, 28, 0.5, 'F')
   y += 9
 
@@ -121,36 +173,24 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   let manifestFirstPage = true
   autoTable(doc, {
     startY: y,
-    head: [['#', 'ITEM NAME', 'SKU', 'DEPT', 'DIMENSIONS', 'WEIGHT', 'POSITION']],
-    body: packed.map(function(b, i) {
-      return [
-        String(b.loadOrder || (i + 1)),
-        b.name || '',
-        b.sku || '-',
-        b.department_name || '-',
-        dim(b),
-        (b.weight || 0) + ' lbs',
-        '(' + Math.round(b.x||0) + ', ' + Math.round(b.y||0) + ', ' + Math.round(b.z||0) + ')'
-      ]
-    }),
+    head: [['LOAD #', 'CASE', 'LINE ITEM', 'ITEM QTY', 'CASE QTY']],
+    body: warehouseRows,
     theme: 'grid',
     styles: { fontSize: 7, cellPadding: 2.2, textColor: C.gray800, lineColor: C.gray200, lineWidth: 0.2 },
     headStyles: { fillColor: C.navy, textColor: C.white, fontSize: 6.5, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: C.gray50 },
     columnStyles: {
-      0: { cellWidth: 8,  halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: 45 },
-      2: { cellWidth: 22 },
-      3: { cellWidth: 20 },
-      4: { cellWidth: 28 },
-      5: { cellWidth: 18, halign: 'right' },
-      6: { cellWidth: 26 },
+      0: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 52 },
+      2: { cellWidth: 74 },
+      3: { cellWidth: 18, halign: 'center' },
+      4: { cellWidth: 18, halign: 'center' },
     },
     margin: { left: 14, right: 14 },
     willDrawPage: function(data) {
       if (manifestFirstPage) { manifestFirstPage = false; return }
       doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-      hdr(doc, eventName + ' — Manifest (cont.)', eventDate, PW)
+      hdr(doc, eventName + ' — Warehouse Pull (cont.)', eventDate, PW)
       data.settings.startY = 32
     },
   })
@@ -158,10 +198,10 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
   if (unpacked.length > 0) {
     const uy = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 8
     doc.setTextColor(...C.red); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
-    doc.text('ITEMS THAT DID NOT FIT', 14, uy)
+    doc.text('CASES THAT DID NOT FIT', 14, uy)
     autoTable(doc, {
       startY: uy + 5,
-      head: [['ITEM NAME', 'SKU', 'DEPT', 'DIMENSIONS', 'WEIGHT', 'REASON']],
+      head: [['CASE NAME', 'SKU', 'DEPT', 'DIMENSIONS', 'WEIGHT', 'REASON']],
       body: unpacked.map(function(b) {
         return [
           b.name || '',
@@ -180,51 +220,45 @@ export function generateLoadPlanPDF(plan, packed, unpacked, callSheet, truck, de
     })
   }
 
-  // Call Sheet page
+  // Truck pack order page
   doc.addPage()
   doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-  hdr(doc, 'CALL SHEET  ·  ' + eventName, truckName + '  ·  ' + eventDate, PW)
+  hdr(doc, 'TRUCK PACK ORDER  ·  ' + eventName, truckName + '  ·  ' + eventDate, PW)
 
   doc.setFillColor(...C.blueLight); doc.setDrawColor(...C.blue)
   doc.roundedRect(14, 32, PW - 28, 14, 2, 2, 'FD')
   doc.setTextColor(...C.navy); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
-  doc.text('PACKER INSTRUCTIONS', PW / 2, 38, { align: 'center' })
+  doc.text('TRUCK PACK INSTRUCTIONS', PW / 2, 38, { align: 'center' })
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7)
-  doc.text('Call each case in order. Load from BACK to FRONT. Cross off each row as the case enters the truck.', PW / 2, 43, { align: 'center' })
+  doc.text('Load cases in order from BACK to FRONT. Use this list as the truck pack sequence.', PW / 2, 43, { align: 'center' })
+
+  doc.setFillColor(...C.gray100); doc.setDrawColor(...C.gray200)
+  doc.roundedRect(14, 49, PW - 28, 17, 2, 2, 'FD')
+  doc.setTextColor(...C.gray600); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+  doc.text('WAREHOUSE NOTES', 16, 53.5)
+  doc.setTextColor(...C.gray800); doc.setFontSize(7); doc.setFont('helvetica', 'normal')
+  const noteText = warehouseNotes || 'No warehouse notes provided.'
+  doc.text(noteText, 16, 58, { maxWidth: PW - 32 })
 
   let callFirstPage = true
   autoTable(doc, {
-    startY: 51,
-    head: [['CALL #', 'CASE NAME', 'SKU / CASE #', 'DEPARTMENT', 'DIMENSIONS', 'WEIGHT', 'CHECK']],
-    body: (callSheet || []).map(function(row, i) {
-      return [
-        String(row.callPosition || (i + 1)),
-        row.name || '',
-        row.sku || '-',
-        row.department || row.department_name || '-',
-        row.dimensions || ((row.l||row.length||'') + 'in x ' + (row.w||row.width||'') + 'in x ' + (row.h||row.height||'') + 'in'),
-        row.weight ? (row.weight + ' lbs') : '-',
-        ''
-      ]
-    }),
+    startY: 71,
+    head: [['ORDER', 'CASE NAME', 'QTY']],
+    body: truckOrderRows,
     theme: 'grid',
     styles: { fontSize: 8, cellPadding: 3, textColor: C.gray800, lineColor: C.gray200, lineWidth: 0.25, minCellHeight: 10 },
     headStyles: { fillColor: C.navy, textColor: C.white, fontSize: 7, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: C.gray50 },
     columnStyles: {
-      0: { cellWidth: 14, halign: 'center', fontStyle: 'bold', textColor: C.blue },
-      1: { cellWidth: 48 },
-      2: { cellWidth: 25 },
-      3: { cellWidth: 25 },
-      4: { cellWidth: 28 },
-      5: { cellWidth: 18, halign: 'right' },
-      6: { cellWidth: 9,  halign: 'center' },
+      0: { cellWidth: 18, halign: 'center', fontStyle: 'bold', textColor: C.blue },
+      1: { cellWidth: 145 },
+      2: { cellWidth: 18, halign: 'center' },
     },
     margin: { left: 14, right: 14 },
     willDrawPage: function(data) {
       if (callFirstPage) { callFirstPage = false; return }
       doc.setFillColor(...C.white); doc.rect(0, 0, PW, PH, 'F')
-      hdr(doc, 'CALL SHEET (cont.)  ·  ' + eventName, eventDate, PW)
+      hdr(doc, 'TRUCK PACK ORDER (cont.)  ·  ' + eventName, eventDate, PW)
       data.settings.startY = 32
     },
   })

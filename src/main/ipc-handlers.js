@@ -148,6 +148,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
       const id = db.nextId('plans')
       db.data.plans.push({
         id, name: plan.name, truck_id: plan.truck_id,
+        event_id: plan.event_id || null,
         result_json: plan.result_json, utilization: plan.utilization,
         total_weight: plan.total_weight, created_at: now, updated_at: now
       })
@@ -211,6 +212,7 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
         load_out: event.load_out || '',
         status: event.status || 'upcoming',
         notes: event.notes || '',
+        warehouse_notes: event.warehouse_notes || '',
         // Venue
         venue_name: event.venue_name || '',
         venue_address: event.venue_address || '',
@@ -553,6 +555,60 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
     return true
   })
 
+  // Attach a parking or backstage pass image to the event
+  ipcMain.handle('events:attachPass', async (_, { eventId, passType }) => {
+    const label = passType === 'parking' ? 'Parking Pass' : 'Backstage Pass'
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: `Attach ${label}`,
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf'] }],
+    })
+    if (canceled || !filePaths.length) return null
+    const db = getDb()
+    if (!db.data.events) return null
+    const idx = db.data.events.findIndex(e => e.id === eventId)
+    if (idx === -1) return null
+
+    const src = filePaths[0]
+    const dir = path.join(eventsDir(), String(eventId))
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    // Prefix filename with pass type to avoid collisions
+    const ext = path.extname(path.basename(src))
+    const destName = `${passType}_pass_${Date.now()}${ext}`
+    const dest = path.join(dir, destName)
+    fs.copyFileSync(src, dest)
+    const stat = fs.statSync(dest)
+    const fileEntry = { name: destName, path: dest, size: stat.size, added_at: new Date().toISOString() }
+
+    const field = passType === 'parking' ? 'parking_pass' : 'backstage_pass'
+    // Remove old pass file if exists
+    const old = db.data.events[idx][field]
+    if (old && old.path && fs.existsSync(old.path)) {
+      try { fs.unlinkSync(old.path) } catch (_) {}
+    }
+    db.data.events[idx][field] = fileEntry
+    db.data.events[idx].updated_at = new Date().toISOString()
+    db.save()
+    return fileEntry
+  })
+
+  ipcMain.handle('events:removePass', (_, { eventId, passType }) => {
+    const db = getDb()
+    if (!db.data.events) return false
+    const idx = db.data.events.findIndex(e => e.id === eventId)
+    if (idx === -1) return false
+    const field = passType === 'parking' ? 'parking_pass' : 'backstage_pass'
+    const entry = db.data.events[idx][field]
+    if (entry && entry.path && fs.existsSync(entry.path)) {
+      try { fs.unlinkSync(entry.path) } catch (_) {}
+    }
+    db.data.events[idx][field] = null
+    db.data.events[idx].updated_at = new Date().toISOString()
+    db.save()
+    return true
+  })
+
   ipcMain.handle('items:deleteAll', () => {
     const db = getDb()
     db.data.items = []
@@ -607,6 +663,18 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
     const XLSX = require('xlsx')
     const wb = XLSX.utils.book_new()
 
+    // Build full path string for a group: "Parent > Child > Grandchild"
+    const buildGroupPath = (groupId) => {
+      if (!groupId) return ''
+      const parts = []
+      let current = groups.find(g => g.id === groupId)
+      while (current) {
+        parts.unshift(current.name)
+        current = current.parent_id ? groups.find(g => g.id === current.parent_id) : null
+      }
+      return parts.join(' > ')
+    }
+
     // ── Items sheet ────────────────────────────────────────────────────
     const itemHeader = ['name', 'sku', 'barcode', 'serial', 'department', 'group',
       'length', 'width', 'height', 'weight', 'quantity',
@@ -614,10 +682,9 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
       'can_stack_on_others', 'allow_stacking_on_top', 'max_stack_qty', 'max_stack_weight', 'notes']
     const itemRows = items.map(it => {
       const dept = depts.find(d => d.id === it.department_id)
-      const grp  = groups.find(g => g.id === it.group_id)
       return [
         it.name || '', it.sku || '', it.barcode || '', it.serial || '',
-        dept ? dept.name : '', grp ? grp.name : '',
+        dept ? dept.name : '', buildGroupPath(it.group_id),
         it.length ?? 12, it.width ?? 12, it.height ?? 12, it.weight ?? 0, it.quantity ?? 1,
         it.can_rotate_lr ?? 1, it.can_tip_side ?? 1, it.can_flip ?? 1,
         it.can_stack_on_others ?? 1, it.allow_stacking_on_top ?? 1,
@@ -639,10 +706,9 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
       'can_rotate_lr', 'can_tip_side', 'can_flip',
       'can_stack_on_others', 'allow_stacking_on_top', 'max_stack_weight', 'max_stack_qty', 'notes']
     const caseRows = cases.map(cs => {
-      const grp = groups.find(g => g.id === cs.group_id)
       return [
         cs.name || '', cs.sku || '', cs.barcode || '', cs.serial || '',
-        grp ? grp.name : '', cs.color || '#f59e0b',
+        buildGroupPath(cs.group_id), cs.color || '#f59e0b',
         cs.length ?? 24, cs.width ?? 24, cs.height ?? 24, cs.weight ?? 0,
         cs.can_rotate_lr ?? 1, cs.can_tip_side ?? 1, cs.can_flip ?? 1,
         cs.can_stack_on_others ?? 1, cs.allow_stacking_on_top ?? 1,
@@ -696,17 +762,18 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
        'weight', 'quantity', 'can_rotate_lr', 'can_tip_side', 'can_flip',
        'can_stack_on_others', 'allow_stacking_on_top', 'max_stack_qty', 'max_stack_weight', 'notes'],
       ['Example Mixer', 'MX-001', '012345678901', 'SN12345', 'Audio', 'Stage Rack',
-       19, 14, 7, 22, 1, 1, 1, 1, 1, 1, 0, 50, 'Main FOH mixer'],
-      ['Cable Snake', 'SN-050', '098765432109', '', 'Audio', '',
-       24, 8, 8, 5, 4, 1, 1, 1, 1, 0, 0, 0, ''],
+       19, 14, 7, 22, 1, 1, 1, 1, 1, 1, 0, 50, 'Flat group name — top level'],
+      ['Cable Snake', 'SN-050', '098765432109', '', 'Audio', 'Audio > Cables',
+       24, 8, 8, 5, 4, 1, 1, 1, 1, 0, 0, 0, 'Sub-group: use "Parent > Child"'],
+      ['XLR Multicore', 'XLR-010', '', '', 'Audio', 'Audio > Cables > XLR',
+       18, 6, 4, 2, 10, 1, 1, 1, 1, 0, 0, 0, 'Deep sub-group: "Parent > Child > Grandchild"'],
     ]
     const wsItems = XLSX.utils.aoa_to_sheet(itemHeaders)
-    // Style the header row as bold by setting column widths
     wsItems['!cols'] = [
-      { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+      { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 26 },
       { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
       { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 20 },
-      { wch: 14 }, { wch: 16 }, { wch: 24 },
+      { wch: 14 }, { wch: 16 }, { wch: 36 },
     ]
     XLSX.utils.book_append_sheet(wb, wsItems, 'Items')
 
@@ -715,17 +782,17 @@ function registerIpcHandlers(ipcMain, dialog, shell, win) {
       ['name', 'sku', 'barcode', 'serial', 'group', 'color', 'length', 'width', 'height',
        'weight', 'can_rotate_lr', 'can_tip_side', 'can_flip',
        'can_stack_on_others', 'allow_stacking_on_top', 'max_stack_weight', 'max_stack_qty', 'notes'],
-      ['Audio Road Case', 'ARC-001', '012345678901', '', 'Audio Cases',
-       '#4f8ef7', 24, 18, 20, 35, 1, 0, 0, 1, 1, 150, 2, 'Main audio case'],
-      ['Video Pelican', 'VID-002', '098765432109', 'P9988', 'Video Cases',
+      ['Audio Road Case', 'ARC-001', '012345678901', '', 'Cases > Audio',
+       '#4f8ef7', 24, 18, 20, 35, 1, 0, 0, 1, 1, 150, 2, 'Sub-group path: "Cases > Audio"'],
+      ['Video Pelican', 'VID-002', '098765432109', 'P9988', 'Cases > Video',
        '#8b5cf6', 20, 16, 14, 18, 1, 0, 0, 1, 0, 0, 0, 'Camera & lenses'],
     ]
     const wsCases = XLSX.utils.aoa_to_sheet(caseHeaders)
     wsCases['!cols'] = [
-      { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 },
+      { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 10 },
       { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
       { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 20 },
-      { wch: 16 }, { wch: 14 }, { wch: 24 },
+      { wch: 16 }, { wch: 14 }, { wch: 30 },
     ]
     XLSX.utils.book_append_sheet(wb, wsCases, 'Cases')
 

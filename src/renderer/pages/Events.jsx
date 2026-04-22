@@ -289,9 +289,9 @@ export default function Events() {
                             key={ev.id}
                             onClick={e => { e.stopPropagation(); navigate(`/events/${ev.id}`) }}
                             className={`text-xs px-1.5 py-0.5 rounded truncate font-medium text-white cursor-pointer hover:brightness-125 transition-all ${DOT_COLOR[ev.status] || 'bg-blue-500'}`}
-                            title={ev.name}
+                            title={ev.warehouse_notes ? `${ev.name} — ${ev.warehouse_notes}` : ev.name}
                           >
-                            {ev.name}
+                            {ev.name}{ev.warehouse_notes ? '  •' : ''}
                           </div>
                         ))}
                         {dayEvents.length > 3 && (

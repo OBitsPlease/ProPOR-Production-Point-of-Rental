@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Truck, Plus, Pencil, Trash2, X, Check } from 'lucide-react'
 
 const UNITS = ['in', 'cm', 'ft', 'mm']
@@ -23,13 +23,23 @@ export default function TruckProfiles() {
   const openEdit = (t) => { setForm({ ...t }); setEditing(t) }
   const cancel = () => setEditing(null)
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!form.name || !form.length || !form.width || !form.height) return
     const id = editing !== 'new' ? editing.id : undefined
     await window.electronAPI.saveTruck({ ...form, id })
     setEditing(null)
     load()
-  }
+  }, [form, editing])
+
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save() }
+      if (e.key === 'Escape') { e.preventDefault(); cancel() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing, save])
 
   const del = async (id) => {
     if (!confirm('Delete this truck profile?')) return
